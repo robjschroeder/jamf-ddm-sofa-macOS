@@ -1,0 +1,790 @@
+#!/bin/zsh
+
+# Jamf DDM SOFA Processor (v2.0.9)
+# by Robert Schroeder (@robjschroeder)
+# Updated: 2025-05-29
+
+# === API Configuration ===
+# jamf_client_id="f1398d33-c654-42ac-9390-9eee131840ee"
+# jamf_client_secret="NnFERh-mZe-n4E37txBSTXKFg_DvkmN1Axw3OwOTHpuNE4HZp207sKEDlI8Jpe44"
+# jamf_uri="https://lululemon.jamfcloud.com"
+# nvd_api_key="766ceb2f-973f-4650-bc37-c355346ed8ac"
+jamf_client_id=""
+jamf_client_id_secret=""
+jamf_uri=""
+nvd_api_key=""
+nvd_uri="https://services.nvd.nist.gov/rest/json/cves/2.0"
+sofa_uri="https://sofafeed.macadmins.io/v1/macos_data_feed.json"
+
+# === Script Defaults ===
+script_name="Jamf DDM SOFA Processor"
+script_version="2.0.9"
+script_date="2025-05-29"
+log_level="INFO"
+dry_run="false"
+version_type="LATEST_MINOR"
+update_action="DOWNLOAD_INSTALL_SCHEDULE"
+
+# === Group Config ===
+# Smart Group IDs
+typeset -A smart_group_ids=( 
+    AlphaGroup 1060
+    # BetaGroup 1061
+    GammaGroup 1062
+    ReleaseGroup 1327
+)
+
+# Smart Group Deferral Days
+# These are the number of days to defer updates for each group. (i.e., when the update becomes available to the group.)
+typeset -A deferral_days=( 
+    AlphaGroup 0
+    BetaGroup 3
+    GammaGroup 5
+    ReleaseGroup 10
+)
+
+# Smart Group Version Type Overrides
+# This allows you to override the version type for specific groups.
+# For example, you can set "LATEST_ANY" to always get the latest version regardless of major or minor.
+typeset -A version_type_overrides=( 
+    # AlphaGroup "LATEST_ANY"
+    # BetaGroup "LATEST_ANY"
+    # GammaGroup "LATEST_ANY"
+    # ReleaseGroup "LATEST_ANY" 
+)
+
+# === Logging Functions ===
+function log() {
+  local level="$1"; shift
+  local timestamp=$(date "+%Y-%m-%d %H:%M:%S")
+  echo "$timestamp [$level] $@" >&2
+}
+
+function log_info()   { log INFO "$@"; }
+function log_debug()  { [[ "$log_level" == "DEBUG" ]] && log DEBUG "$@"; }
+function log_warn()   { log WARNING "$@"; }
+function log_error()  { log ERROR "$@"; }
+
+# === CLI Parameter Parsing Enhancement ===
+function parse_cli_credentials() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --jamf-client-id)
+        shift; jamf_client_id="$1";;
+      --jamf-client-secret)
+        shift; jamf_client_secret="$1";;
+      --jamf-uri)
+        shift; jamf_uri="$1";;
+      --nvd-api-key)
+        shift; nvd_api_key="$1";;
+    esac
+    shift
+  done
+
+  local missing=()
+  [[ -z "$jamf_client_id" ]] && missing+=(--jamf-client-id)
+  [[ -z "$jamf_client_secret" ]] && missing+=(--jamf-client-secret)
+  [[ -z "$jamf_uri" ]] && missing+=(--jamf-uri)
+  [[ -z "$nvd_api_key" ]] && missing+=(--nvd-api-key)
+
+  if [[ ${#missing[@]} -gt 0 ]]; then
+    log_error "Missing required parameters: ${missing[*]}"
+    echo "Usage: $0 --jamf-client-id <id> --jamf-client-secret <secret> --jamf-uri <uri> --nvd-api-key <key> [other options]"
+    exit 1
+  fi
+}
+
+
+# === Deadline Policy ===
+active_deadline_days=1
+critical_deadline_days=2
+high_deadline_days=3
+medium_deadline_days=4
+low_deadline_days=6
+standard_deadline_days=7
+
+# === Set Terminal Size and Clear Screen ===
+# This function sets the terminal window size and clears the screen.
+function set_terminal_size() {
+    local term_size="$1"
+    local cursor_pos="$2"
+
+    printf "%b" "$term_size"
+    printf "%b" "$cursor_pos"
+    clear
+}
+
+# === Display Help Function ===
+function displayHelp() {
+
+    set_terminal_size '\e[8;52;140t' '\e[3;2;2t'
+
+    echo "
+${script_name} (${script_version})
+by Robert Schroeder (@robjschroeder)
+Revised: ${script_date}
+
+This script processes the SOFA JSON feed and creates update plans in Jamf Pro
+for devices in defined smart groups, based on CVE severity and deadlines.
+
+    Usage:
+    zsh ./${script_name}.zsh [--jamf-client-id <jamf_clien_id>] [--jamf-client-secret <jamf_client_secret>] [--jamf_uri <https://instance.jamfcloud.com>] [--nvd-api-key <nvd_api_key>] [--dry-run] [--debug] [--macOS <version>] [--deadline <YYYY-MM-DD>] [--help]
+
+
+    [no flags]  Creates update plans for all members of the defined smart groups,
+                using calculated deadlines, based on CVE severity.
+
+    --dry-run   Runs the script in dry run mode, which means it will not create any update plans.
+
+    --debug     Enables debug mode
+
+    --macOS <version>
+                Specifies a manual macOS version to use for the update plans.
+                If not specified, the script will use the latest version from the SOFA feed.
+                Example: --macOS 15.5
+
+    --deadline <YYYY-MM-DD>
+                Sets the deadline for the update plans to the specified date: YYYY-MM-DD.
+                If not specified, the script will calculate deadlines based on CVE severity.
+
+    --help      Displays this message and exits
+
+
+
+    [Required Parameters]
+    --jamf-client-id <id>
+                The Jamf Pro API client ID for authentication.
+
+    --jamf-client-secret <secret>
+                The Jamf Pro API client secret for authentication.
+
+    --jamf-uri <uri>
+                The Jamf Pro API base URI (e.g., https://your-jamf-pro-url).
+
+    --nvd-api-key <key>
+                The NVD API key for fetching CVE data.
+
+    "
+    exit
+}
+
+
+
+# === Dry Run Check ===
+# This function checks if the script is running in dry run mode.
+function is_dry_run() {
+  [[ "$dry_run" == "true" ]]
+}
+
+# === Helper: URL Encode ===
+# This function URL encodes a given string.
+# It replaces special characters with their percent-encoded equivalents.
+function urlencode() {
+  local str="$1" encoded=""
+  for (( i = 0; i < ${#str}; i++ )); do
+    local c=${str:$i:1}
+    case $c in
+      [a-zA-Z0-9.~_-]) encoded+="$c" ;;
+      *) printf -v encoded "%s%%%02X" "$encoded" "'${c}" ;;
+    esac
+  done
+  echo "$encoded"
+}
+
+# === Helper: Parse Safe JSON with jq ===
+# This function safely parses JSON input using jq, handling errors gracefully.
+# It returns the result of the jq filter applied to the JSON input.
+function parse_safe_jq() {
+  local json="$1"
+  local filter="$2"
+  echo "$json" | jq -rR "fromjson? | $filter"
+}
+
+# === Helper: Version Normalization ===
+# This function normalizes a version string into a comparable integer format.
+# It converts a version string like "15.5.1" into an integer like 1500501.
+function normalize_version() {
+  echo "$1" | awk -F. '{ printf("%d%03d%03d\n", $1, $2, $3 ? $3 : 0) }'
+}
+
+# === Jamf Access Token ===
+# This function retrieves a bearer token from Jamf Pro for API access.
+function get_jamf_access_token() {
+  log_info "Requesting bearer token from Jamf Pro..."
+  local response=$(curl -s -X POST "$jamf_uri/api/oauth/token" \
+    -H "Content-Type: application/x-www-form-urlencoded" \
+    -d "client_id=$jamf_client_id&client_secret=$jamf_client_secret&grant_type=client_credentials")
+  bearer_token=$(echo "$response" | jq -r '.access_token')
+  token_expiration=$(echo "$response" | jq -r '.expires_in')
+
+  if [[ -z "$bearer_token" || "$bearer_token" == "null" ]]; then
+    log_error "Failed to obtain bearer token. Response: $response"
+    exit 1
+  fi
+  log_info "Successfully obtained bearer token. Token expires in $token_expiration seconds."
+}
+
+# === Clear Jamf Access Token ===
+# This function invalidates the bearer token to ensure it cannot be reused.
+function clear_jamf_access_token() {
+  log_info "Invalidating bearer token..."
+  response=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$jamf_uri/api/v1/auth/invalidate-token" \
+    -H "accept: application/json" \
+    -H "Authorization: Bearer $bearer_token")
+  if [[ "$response" == "204" ]]; then
+    log_info "Bearer token invalidated successfully."
+  else
+    log_warn "Failed to invalidate bearer token. HTTP Status: $response"
+  fi
+}
+
+# === Confirm Managed Software Updates ===
+# This function checks if the Managed Software Updates feature is enabled in Jamf Pro
+function confirm_managed_software_updates() {
+    log_info "Checking if Managed Software Updates are enabled in Jamf Pro …"
+    local response=$(curl -s -w "%{http_code}" -o /tmp/managed_software_updates_status.json \
+        -X GET "$jamf_uri/api/v1/managed-software-updates/plans" \
+        -H "Authorization: Bearer $bearer_token" \
+        -H "Accept: application/json" \
+        -H "Content-Type: application/json" \
+        -d "$json_body")
+    local status_code="${response:(-3)}"
+    log_debug "confirm_managed_software_updates Status Code: $status_code"
+    if [[ "$status_code" == "503" ]]; then
+        log_error "Managed Software Updates are NOT enabled in Jamf Pro."
+        log_error "Please enable 'Use the new software updates feature' at:"
+        log_error "$jamf_uri/view/computers/software-updates"
+        exit 1
+    else
+        log_info "Managed Software Updates are enabled in Jamf Pro."
+    fi
+}
+
+# === Fetch and Parse SOFA JSON ===
+# This function fetches the SOFA JSON feed and parses it to extract OS version information.
+function fetch_and_parse_sofa_json() {
+  log_info "Fetching JSON from $sofa_uri"
+  sofa_json=$(curl -s "$sofa_uri")
+  local tempfile=$(mktemp)
+  printf "%s" "$sofa_json" > "$tempfile"
+  log_debug "Dumping tempfile path: $tempfile"
+  local os_count=$(jq -r '.OSVersions | length' "$tempfile")
+  log_debug "jq output: [$os_count]"
+  if [[ -z "$os_count" || "$os_count" == "null" ]]; then
+    log_error "Failed to determine number of OSVersions."
+    cat "$tempfile"
+    rm -f "$tempfile"
+    return 1
+  fi
+  log_debug "Parsed $os_count OS version entries from SOFA feed."
+  rm -f "$tempfile"
+}
+
+# === Dump OS Versions Array ===
+# This function dumps the keys and values of the os_versions associative array for debugging.
+function dump_os_versions_array() {
+  log_debug "==== Dumping keys from os_versions associative array ===="
+  for key in ${(k)os_versions}; do
+    log_debug "Key: [$key] → Value: ${os_versions[$key]}"
+  done
+}
+
+# === Calculate Dates ===
+# This function calculates future dates based on a release date and deferral days.
+function calculateDates() {
+  local release="$1"
+  local deferral="$2"
+  local deadline="$3"
+
+  if [[ -z "$release" ]]; then
+    log_warn "calculateDates received empty release date"
+    echo "||"
+    return
+  fi
+
+  # Step 1: calculate available_date (release + deferral) at 00:00 UTC
+  local available_date=$(date -u -j -f "%Y-%m-%dT%H:%M:%SZ" -v+"$deferral"d "$release" +"%Y-%m-%dT00:00:00")
+
+  # Step 2: calculate force_date (available_date + deadline) at 18:00 UTC
+  local force_date=$(date -u -j -f "%Y-%m-%dT%H:%M:%S" -v+"$deadline"d "$available_date" +"%Y-%m-%dT18:00:00")
+
+  echo "$available_date|$force_date"
+}
+
+
+# === Determine Deadline Days ===
+# This function determines the deadline days for an OS version based on its CVEs.
+function determine_deadline_days() {
+  local os_key="$1"
+  local deadline_days=$standard_deadline_days
+  local cves=(${(s:,:)os_versions[$os_key,cves]})
+  local active_cves=(${(s:,:)os_versions[$os_key,active_cves]})
+
+  for cve in $active_cves; do
+    log_info "Actively exploited CVE found: $cve" >&2
+    echo $active_deadline_days
+    return
+  done
+
+  local severity
+  for cve in $cves; do
+    log_debug "Checking severity for CVE: $cve" >&2
+    local response=$(curl -s --header "apiKey: $nvd_api_key" --header "User-Agent: SOFA-Jamf-Processor/1.0" "$nvd_uri?cveId=$cve")
+    severity=$(echo "$response" | jq -r '.vulnerabilities[0].cve.metrics.cvssMetricV31[]?.cvssData.baseSeverity' | head -n 1)
+
+    log_debug "CVE $cve Severity: $severity" >&2
+
+    case "$severity" in
+      CRITICAL) echo $critical_deadline_days; return;;
+      HIGH) echo $high_deadline_days; return;;
+      MEDIUM) echo $medium_deadline_days; return;;
+      LOW) echo $low_deadline_days; return;;
+    esac
+  done
+
+  echo $standard_deadline_days
+}
+
+# === Find Best OS Match ===
+# This function finds the best OS version match based on the current version, model ID, and version type.
+# It returns the best match key or an empty string if no match is found.
+function find_best_os_match() {
+  local current_version="$1"
+  local model_id="$2"
+  local version_type="$3"
+
+  # Get supported major OS versions from SOFA
+  local supported_os_raw=$(echo "$sofa_json" | jq -r ".Models[\"$model_id\"].SupportedOS[]?" 2>/dev/null | grep -Eo '[0-9]+$')
+  local -a supported_majors=("${(@f)supported_os_raw}")
+
+  {
+    log_debug "$model_id supports majors: ${supported_majors[*]}"
+    for os_major in "${supported_majors[@]}"; do
+      log_debug " → Supported major: '$os_major'"
+    done
+  } >&2
+
+  local current_major="${current_version%%.*}"
+  local norm_current_version=$(normalize_version "$current_version")
+  local best_match=""
+
+  local unique_os_keys=("${(@u)${(k)os_versions%%,*}}")
+
+  for os_key in $unique_os_keys; do
+    local os_version="${os_versions[$os_key,version]}"
+    local os_major="${os_version%%.*}"
+    local norm_os_version=$(normalize_version "$os_version")
+    local release="${os_versions[$os_key,release_date]}"
+    local available_date=$(calculateDates "$release" 0 0 | cut -d'|' -f1)
+
+    if [[ "$(date -u +%Y-%m-%dT%H:%M:%S)" < "$available_date" ]]; then
+      log_debug "Skipping $os_key: release date $available_date is in the future" >&2
+      continue
+    fi
+
+    log_debug "Evaluating $os_key → $os_version (major $os_major), Current: $current_version → $norm_current_version vs $norm_os_version" >&2
+
+    case "$version_type" in
+      LATEST_ANY)
+        if [[ "$norm_os_version" -gt "$norm_current_version" ]]; then
+          if [[ " ${supported_majors[*]} " == *" $os_major "* ]]; then
+            log_debug "Match accepted: $os_version ($os_major supported)" >&2
+            best_match="$os_key"
+          else
+            log_debug "Match rejected: $os_version ($os_major not supported)" >&2
+          fi
+        fi
+        ;;
+      LATEST_MAJOR)
+        local highest_supported_major=$(printf '%s\n' "${supported_majors[@]}" | sort -nr | head -n1)
+        if [[ "$os_major" == "$highest_supported_major" && "$norm_os_version" -gt "$norm_current_version" ]]; then
+          log_debug "Match accepted (LATEST_MAJOR): $os_version" >&2
+          best_match="$os_key"
+        fi
+        ;;
+      LATEST_MINOR)
+        if [[ "$os_major" == "$current_major" && "$norm_os_version" -gt "$norm_current_version" ]]; then
+          log_debug "Match accepted (LATEST_MINOR): $os_version" >&2
+          best_match="$os_key"
+        fi
+        ;;
+    esac
+  done
+
+  if [[ -n "$best_match" ]]; then
+    print -r -- "$best_match"
+  fi
+}
+
+# === Get Existing Software Update Plan ===
+# This function checks if a software update plan already exists for a device with a specific deadline.
+function get_existing_plan() {
+
+  local device_id="$1"
+  local force_datetime="$2"
+
+  local encoded_device_id=$(urlencode "$device_id")
+  local encoded_force_datetime=$(urlencode "$force_datetime")
+
+  local filter="device.deviceId==$encoded_device_id;forceInstallLocalDateTime==$encoded_force_datetime"
+  local url="$jamf_uri/api/v1/managed-software-updates/plans?filter=$filter"
+
+  log_debug "get_existing_plan url: $url"
+
+  local response=$(curl -s -w "%{http_code}" -o /tmp/plan_check.json \
+    -H "Authorization: Bearer $bearer_token" \
+    -H "Accept: application/json" "$url")
+  log_debug "get_existing_plan response: $response"
+
+  local force_Install_Local_DateTime=$(jq -r '.results[0].forceInstallLocalDateTime // empty' /tmp/plan_check.json)
+  log_debug "get_existing_plan force_Install_Local_DateTime: $force_Install_Local_DateTime"
+
+    if [[ -z "$force_Install_Local_DateTime" ]]; then
+        log_info "No existing plan."
+        existing_count="0"
+        total_count="0"
+        plan_uuid="empty"
+        return 0
+    fi
+
+  local plan_uuid=$(jq -r '.results[0].planUuid // empty' /tmp/plan_check.json)
+  log_debug "get_existing_plan plan_uuid: $plan_uuid"
+
+  # Create a directory based on forced local date time
+  if [[ ! -d "/tmp/jamf_ddm_plans/$force_Install_Local_DateTime" ]]; then
+    mkdir -p "/tmp/jamf_ddm_plans/$force_Install_Local_DateTime"
+  fi
+  # Move the plan check file to the new directory
+  cp /tmp/plan_check.json "/tmp/jamf_ddm_plans/$force_Install_Local_DateTime/${device_id}.json"
+
+  local status_code="${response:(-3)}"
+
+  if [[ "$status_code" != "200" ]]; then
+    log_warn "Failed to check for existing plan. Status: $status_code"
+    return 1
+  fi
+
+  local total_count=$(jq -r '.totalCount // 0' /tmp/plan_check.json)
+  echo "$total_count"
+
+}
+
+# === Create Software Update Plan ===
+# This function creates a software update plans in Jamf Pro for a given device.
+function create_software_update_plan() {
+  local device_id="$1"
+  local version_type="$2"
+  local deadline="$3"
+  local update_action="$4"
+
+  local json_body=$(cat <<EOF
+{
+  "devices": [
+    {
+      "objectType": "COMPUTER",
+      "deviceId": "$device_id"
+    }
+  ],
+  "config": {
+    "updateAction": "$update_action",
+    "versionType": "$version_type",
+    "specificVersion": "NO_SPECIFIC_VERSION",
+    "forceInstallLocalDateTime": "$deadline"
+  }
+}
+EOF
+  )
+
+  log_info "Creating update plan for device $device_id → $version_type by $deadline"
+
+  local response=$(curl -s -w "%{http_code}" -o /tmp/plan_response.json \
+    -X POST "$jamf_uri/api/v1/managed-software-updates/plans" \
+    -H "Authorization: Bearer $bearer_token" \
+    -H "Accept: application/json" \
+    -H "Content-Type: application/json" \
+    -d "$json_body")
+
+  local status_code="${response:(-3)}"
+
+  if [[ "$status_code" == "201" ]]; then
+    local plan_id=$(jq -r '.plans[0].planId' /tmp/plan_response.json)
+    log_info "Update plan created. Plan ID: $plan_id"
+    log_info "View plan: $jamf_uri/api/v1/managed-software-updates/plans/$plan_id"
+    get_existing_plan "$device_id" "$deadline"
+  else
+    log_warn "Failed to create update plan. Status: $status_code"
+    cat /tmp/plan_response.json | jq . || cat /tmp/plan_response.json
+  fi
+}
+
+# === Process Group Devices ===
+# This function processes devices in a smart group, checking for updates and creating plans as needed.
+function process_group_devices() {
+
+  local group_name="$1"
+  local group_id="$2"
+  local deferral="${deferral_days[$group_name]:-0}"
+  local version_type="${version_type_overrides[$group_name]:-LATEST_MINOR}"
+
+  echo ""
+  log_info "Processing Smart Group: $group_name (Deferral: $deferral days, VersionType: $version_type)"
+
+  local members_json=$(curl -s -H "Authorization: Bearer $bearer_token" \
+    "$jamf_uri/api/v2/computer-groups/smart-group-membership/$group_id")
+  local device_ids=($(echo "$members_json" | jq -r '.members[]'))
+
+    if [[ ${#device_ids[@]} -eq 0 ]]; then
+        log_info "No devices found in smart group: $group_name"
+        return
+    fi
+
+  for device_id in $device_ids; do
+    log_debug "Fetching inventory for device ID: $device_id"
+    local inv_json=$(curl -s "$jamf_uri/api/v1/computers-inventory/$device_id?section=GENERAL&section=HARDWARE&section=OPERATING_SYSTEM" \
+      -H "Authorization: Bearer $bearer_token" \
+      -H "Accept: application/json")
+
+    if [[ -z "$inv_json" || "$inv_json" == "null" ]]; then
+      log_warn "No inventory data found for device ID: $device_id"
+      continue
+    fi
+
+    local device_name=$(printf '%s\n' "$inv_json" | jq -r '.general.name // empty')
+    local model_id=$(printf '%s\n' "$inv_json" | jq -r '.hardware.modelIdentifier // empty')
+    local current_version=$(printf '%s\n' "$inv_json" | jq -r '.operatingSystem.version // empty')
+
+    unset inv_json # Free up memory
+
+    if [[ -z "$device_name" || -z "$model_id" || -z "$current_version" ]]; then
+      log_warn "Missing required fields in inventory data for device ID: $device_id"
+      continue
+    fi
+
+    log_debug "Name=$device_name | Model=$model_id | Version=$current_version"
+    log_info "$device_name ($model_id) running macOS $current_version"
+
+    local best_match
+    best_match=$(find_best_os_match "$current_version" "$model_id" "$version_type" | tr -d '\r\n')
+    log_debug "Best match for $device_name: ${best_match:-<none>}"
+
+    if [[ -z "$best_match" ]]; then
+      log_warn "No eligible update found for $device_name"
+      continue
+    fi
+
+    local deadline="${os_versions[$best_match,deadline_days]}"
+    local release="${os_versions[$best_match,release_date]}"
+    local dates=$(calculateDates "$release" "$deferral" "$deadline")
+    local force_date=$(echo "$dates" | cut -d'|' -f2)
+    local to_version="${os_versions[$best_match,version]}"
+
+    if [[ -n "${manual_deadline}" ]]; then
+      force_date="${manual_deadline}T18:00:00"
+      log_info "Using manual force date: $force_date"
+    fi
+
+    if [[ -n "${manual_macos_version}" ]]; then
+      to_version="${manual_macos_version}"
+      log_info "Using manual macOS version: $to_version"
+    fi
+
+    # If force_date is in the past, adjust to tomorrow at 18:00:00
+    current_utc=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    if [[ "$force_date" < "$current_utc" ]]; then
+        force_date="$(date -u -v+1d +"%Y-%m-%d")T18:00:00"
+        log_warn "Force date was in the past. Adjusted to tomorrow: $force_date"
+    fi
+
+    log_info "Eligible update: $device_name → $to_version by $force_date"
+    log_info "Checking for existing plan for $device_name with Install Deadline: $force_date"
+    local existing_count=$(get_existing_plan "$device_id" "$force_date")
+    log_debug "process_group_devices existing_count: $existing_count"
+
+    if [[ "$existing_count" -gt 0 ]]; then
+      log_warn "Existing plan(s) found for $device_name ($device_id) with same deadline. Skipping."
+    else
+      log_info "Creating update plan for $device_name from $current_version to $to_version with deadline $force_date"
+
+      if is_dry_run; then
+        log_info "[Dry Run] Skipping actual update plan creation for $device_name ($device_id)"
+      else
+        create_software_update_plan "$device_id" "$version_type" "$force_date" "$update_action"
+        sleep 1
+      fi
+    fi
+    echo ""
+  done
+
+  unset members_json device_ids # Free up memory
+
+}
+
+# === Main Execution ===
+# This section sets up the terminal window size and clears the screen.
+# It also processes command-line arguments and initializes the script.
+function main() {
+    set_terminal_size '\e[8;52;165t' '\e[3;2;2t'
+
+    for arg in "$@"; do
+        if [[ "$arg" == "--help" || "$arg" == "-h" ]]; then
+            displayHelp
+            exit 0
+        elif [[ "$arg" == "--version" || "$arg" == "-v" ]]; then
+            printf "\n${script_name} (${script_version}) by Robert Schroeder. Revised: ${script_date}.\n\n"
+            exit 0
+        fi
+    done
+    
+
+    while test $# -gt 0
+    do
+        case "$1" in
+            -h|--help )
+                displayHelp
+                ;;
+            -m|--macOS )
+                shift
+                if [[ -z "$1" ]]; then
+                    echo "Error: '--macOS' requires a version (e.g., 15.5)"
+                    exit 1
+                fi
+                if [[ "$1" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]]; then
+                    manual_macos_version="$1"
+                else
+                    echo "Error: '--macOS' must be a valid macOS version (e.g., 15.5)"
+                    exit 1
+                fi
+                ;;
+            -d|--deadline )
+                shift
+                if [[ -z "$1" ]]; then
+                    echo "Error: '--deadline' must be in format YYYY-MM-DD (MM=01-12, DD=01-31)"
+                    exit 1
+                fi
+                if [[ "$1" =~ ^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|31)$ ]]; then
+                    manual_deadline="$1"
+                else
+                    echo "Error: '--deadline' must be in format YYYY-MM-DD (MM=01-12, DD=01-31)"
+                    exit 1
+                fi
+                ;;
+            --dry-run )
+                dry_run="true"
+                ;;
+            --debug )
+                log_level="DEBUG"
+                ;;
+            -v|--version )
+                printf "\n${script_name} (${script_version}) by Robert Schroeder. Revised: ${script_date}.\n\n"
+                exit 0
+                ;;
+            --jamf-client-id )
+                shift; jamf_client_id="$1"
+                ;;
+            --jamf-client-secret )
+                shift; jamf_client_secret="$1"
+                ;;
+            --jamf-uri )
+                shift; jamf_uri="$1"
+                ;;
+            --nvd-api-key )
+                shift; nvd_api_key="$1"
+                ;;
+            *)
+                echo "Unknown argument: $1"
+                displayHelp
+                ;;
+        esac
+        shift
+    done
+
+    local missing=()
+    [[ -z "$jamf_client_id" ]] && missing+=(--jamf-client-id)
+    [[ -z "$jamf_client_secret" ]] && missing+=(--jamf-client-secret)
+    [[ -z "$jamf_uri" ]] && missing+=(--jamf-uri)
+    [[ -z "$nvd_api_key" ]] && missing+=(--nvd-api-key)
+
+    if [[ ${#missing[@]} -gt 0 ]]; then
+      log_error "Missing required parameters: ${missing[*]}"
+      echo "Usage: $0 --jamf-client-id <id> --jamf-client-secret <secret> --jamf-uri <uri> --nvd-api-key <key> [other options]"
+      exit 1
+    fi
+
+        echo "
+    ${script_name} (${script_version})
+    by Robert Schroeder (@robjschroeder)
+
+        This script processes the SOFA JSON feed and creates update plans in Jamf Pro
+        for devices in defined smart groups, based on CVE severity and deadlines.
+    "
+
+    if [[ "${log_level}" == "DEBUG" ]]; then
+        echo "    Debug mode enabled. Additional debug information will be logged."
+    fi
+
+    if [[ "${dry_run}" == "true" ]]; then
+        echo "    Performing dry run. No update plans will be created."
+    fi
+
+    if [[ -n "${manual_macos_version}" ]]; then
+        printf "\n    Manual macOS version set to: ${manual_macos_version}\n"
+    fi
+
+    if [[ -n "${manual_deadline}" ]]; then
+        echo "         Manual deadline set to: ${manual_deadline}T18:00:00"
+    fi
+
+    echo ""
+
+    # Get Jamf access token
+    get_jamf_access_token
+
+    # Confirm Managed Software Updates are enabled
+    confirm_managed_software_updates
+
+    # Fetch and parse SOFA JSON
+    fetch_and_parse_sofa_json || exit 1
+    typeset -A os_versions
+
+    
+
+    # Process OS Versions
+    os_count=$(echo "$sofa_json" | jq -r '.OSVersions | length')
+    for (( i=0; i<os_count; i++ )); do
+    os_name=$(echo "$sofa_json" | jq -r ".OSVersions[$i].OSVersion")
+    latest_os_name="$os_name"
+    version=$(echo "$sofa_json" | jq -r ".OSVersions[$i].Latest.ProductVersion")
+    release_date=$(echo "$sofa_json" | jq -r ".OSVersions[$i].Latest.ReleaseDate")
+    cves=$(echo "$sofa_json" | jq -r '.OSVersions['"$i"'].Latest.CVEs | select(.!=null) | keys_unsorted | join(",")')
+    active_cves=$(echo "$sofa_json" | jq -r '.OSVersions['"$i"'].Latest.ActivelyExploitedCVEs | select(.!=null) | join(",")')
+
+    os_versions[$os_name,version]="$version"
+    os_versions[$os_name,release_date]="$release_date"
+    os_versions[$os_name,cves]="$cves"
+    os_versions[$os_name,active_cves]="$active_cves"
+    os_versions[$os_name,deadline_days]="$(determine_deadline_days "$os_name")"
+
+    echo ""
+    log_debug "$os_name ($version) Released: $release_date"
+    log_debug "Calculated deadline days based on severity: ${os_versions[$os_name,deadline_days]}"
+    done
+
+    # If debug mode is enabled, dump the os_versions array
+    if [[ "${log_level}" == "DEBUG" ]]; then
+        dump_os_versions_array
+    fi
+    
+    # Process Smart Groups
+    for group in ${(k)smart_group_ids}; do
+        process_group_devices "$group" "${smart_group_ids[$group]}"
+    done
+
+    # Clear Jamf access token
+    clear_jamf_access_token
+
+}
+
+# Only run main if this script is not being sourced
+if [[ "${(%):-%N}" == "$0" ]]; then
+  main "$@"
+fi
