@@ -13,7 +13,7 @@
 ## 🛠 Installation
 
 ```bash
-git clone https://github.com/YOURNAME/jamf-ddm-sofa.git
+git clone https://github.com/robjschroeder/jamf-ddm-sofa-macOS.git
 cd jamf-ddm-sofa
 sudo ./install.sh
 ```
