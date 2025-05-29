@@ -14,7 +14,7 @@
 
 ```bash
 git clone https://github.com/robjschroeder/jamf-ddm-sofa-macOS.git
-cd jamf-ddm-sofa
+cd jamf-ddm-sofa-macOS
 sudo ./install.sh
 ```
 
