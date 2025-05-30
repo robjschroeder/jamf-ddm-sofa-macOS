@@ -1,14 +1,3 @@
-
-## [2.0.15] - 2025-05-30
-
-- Merged PR #7 into main
-- chore: update CHANGELOG for v2.0.15b1
-
-
-## [2.0.15] - 2025-05-30
-
-- chore: update CHANGELOG for v2.0.15b1
-
 ### Changelog
 
 All notable changes to this project will be documented in this file. Dates are displayed in UTC.
