@@ -1,1 +1,6 @@
+
+## [2.0.14b2] - 2025-05-30
+
+- chore: update CHANGELOG for v2.0.14b1
+
 [{"version":"v2.0.14b1","commits":[{"id":"c5f35f307cb320511d1f73ba3288ba374360a384","message":"release 2.0.14b1","body":null,"footers":[],"group":"Miscellaneous Tasks","breaking_description":null,"breaking":false,"scope":null,"links":[],"author":{"name":"Robert Schroeder","email":"robjschroeder@gmail.com","timestamp":1748612423},"committer":{"name":"Robert Schroeder","email":"robjschroeder@gmail.com","timestamp":1748612423},"conventional":true}],"commit_id":"c5f35f307cb320511d1f73ba3288ba374360a384","timestamp":1748612423,"previous":{"version":null,"commits":[],"commit_id":null,"timestamp":0,"previous":null}}]
