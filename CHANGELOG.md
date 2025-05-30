@@ -1,3 +1,8 @@
+
+## [2.0.14b3] - 2025-05-30
+
+- chore: update CHANGELOG for v2.0.14b2
+
 ### Changelog
 
 All notable changes to this project will be documented in this file. Dates are displayed in UTC.
