@@ -14,7 +14,7 @@ sofa_uri="https://sofafeed.macadmins.io/v1/macos_data_feed.json"
 
 # === Script Defaults ===
 script_name="Jamf DDM SOFA Processor"
-script_version="2.0.15"
+script_version="2.0.16b1"
 script_date="2025-05-30"
 log_level="INFO"
 dry_run="false"
@@ -84,9 +84,16 @@ function parse_cli_credentials() {
   [[ -z "$nvd_api_key" ]] && missing+=(--nvd-api-key)
 
   if [[ ${#missing[@]} -gt 0 ]]; then
+    echo "
+${script_name} (${script_version})
+by Robert Schroeder (@robjschroeder)
+Revised: ${script_date}
+"
     log_error "Missing required parameters: ${missing[*]}"
+    echo ""
     echo "Manual Usage: jamf-ddm-sofa --jamf-client-id <id> --jamf-client-secret <secret> --jamf-uri <uri> --nvd-api-key <key> [other options]"
-    echo "Or run: 'jamf-ddm-sofa --configure' to set these parameters in your Keychain."
+    echo ""
+    echo "Or, run: 'jamf-ddm-sofa --configure' to set these parameters in your Keychain."
     exit 1
   fi
 }
@@ -653,6 +660,9 @@ function main() {
         elif [[ "$arg" == "--version" || "$arg" == "-v" ]]; then
             printf "\n${script_name} (${script_version}) by Robert Schroeder. Revised: ${script_date}.\n\n"
             exit 0
+        elif [[ "$arg" == "--configure" || "$arg" == "-c" ]]; then
+            displayConfigure
+            exit 0
         fi
     done
     
@@ -735,9 +745,16 @@ function main() {
     [[ -z "$nvd_api_key" ]] && missing+=(--nvd-api-key)
 
     if [[ ${#missing[@]} -gt 0 ]]; then
+        echo "
+${script_name} (${script_version})
+by Robert Schroeder (@robjschroeder)
+Revised: ${script_date}
+"
         log_error "Missing required parameters: ${missing[*]}"
+        echo ""
         echo "Manual Usage: jamf-ddm-sofa --jamf-client-id <id> --jamf-client-secret <secret> --jamf-uri <uri> --nvd-api-key <key> [other options]"
-        echo "Or run: 'jamf-ddm-sofa --configure' to set these parameters in your Keychain."
+        echo ""
+        echo "Or, run: 'jamf-ddm-sofa --configure' to set these parameters in your Keychain."
         exit 1
     fi
 
@@ -751,9 +768,18 @@ function main() {
 
     if [[ "${log_level}" == "DEBUG" ]]; then
         echo "    Debug mode enabled. Additional debug information will be logged."
+        masked_jamf_client_id="${jamf_client_id:0:3}$(printf '%*s' $((${#jamf_client_id}-4)) '' | tr ' ' '*')${jamf_client_id: -3}"
+        masked_jamf_client_secret="${jamf_client_secret:0:3}$(printf '%*s' $((${#jamf_client_secret}-4)) '' | tr ' ' '*')${jamf_client_secret: -3}"
+        masked_nvd_api_key="${nvd_api_key:0:3}$(printf '%*s' $((${#nvd_api_key}-4)) '' | tr ' ' '*')${nvd_api_key: -3}"
+        echo ""
+        echo "                  jamf_uri: $jamf_uri"
+        echo "            jamf_client_id: $masked_jamf_client_id"
+        echo "        jamf_client_secret: $masked_jamf_client_secret"
+        echo "               nvd_api_key: $masked_nvd_api_key"
     fi
 
     if [[ "${dry_run}" == "true" ]]; then
+        echo ""
         echo "    Performing dry run. No update plans will be created."
     fi
 
