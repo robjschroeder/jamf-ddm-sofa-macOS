@@ -1,3 +1,15 @@
+
+## [2.0.16] - 2025-05-30
+
+- Merge pull request #8 from dan-snelson/2.0.16b1
+- Merge branch 'main' into 2.0.16b1
+- 2.0.16b1: Re-adding 'uninstall.sh'
+- 2.0.16b1: Readability changes to Terminal output
+- chore: update CHANGELOG for v2.0.15
+- Merged PR #7 into main
+- Merged PR #7 into main
+- chore: update CHANGELOG for v2.0.15b1
+
 ### Changelog
 
 All notable changes to this project will be documented in this file. Dates are displayed in UTC.
