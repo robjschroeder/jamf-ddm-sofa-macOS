@@ -5,7 +5,7 @@ jamf-ddm-sofa \- Jamf Pro DDM Software Update Automation using SOFA feed
 
 .SH SYNOPSIS
 .B jamf-ddm-sofa
-[\fIoptions\fR]
+.I [options]
 
 .SH DESCRIPTION
 jamf-ddm-sofa is a command-line tool that processes the macOS SOFA feed,
@@ -14,27 +14,33 @@ Update plans in Jamf Pro based on smart groups and policy logic.
 
 .SH OPTIONS
 .TP
-.B --jamf-client-id \fI<id>\fR
+.B --jamf-client-id
+.I <id>
 Jamf Pro API Client ID.
 
 .TP
-.B --jamf-client-secret \fI<secret>\fR
+.B --jamf-client-secret
+.I <secret>
 Jamf Pro API Client Secret.
 
 .TP
-.B --jamf-uri \fI<uri>\fR
+.B --jamf-uri
+.I <uri>
 Jamf Pro base URI (e.g., https://yourcompany.jamfcloud.com).
 
 .TP
-.B --nvd-api-key \fI<key>\fR
+.B --nvd-api-key
+.I <key>
 API key for the NVD CVE API.
 
 .TP
-.B --macOS \fI<version>\fR
+.B --macOS
+.I <version>
 Override the auto-detected latest macOS version (e.g., 15.5).
 
 .TP
-.B --deadline \fI<YYYY-MM-DD>\fR
+.B --deadline
+.I <YYYY-MM-DD>
 Override the calculated deadline.
 
 .TP
