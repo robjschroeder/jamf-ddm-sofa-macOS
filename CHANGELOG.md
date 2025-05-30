@@ -1,5 +1,1 @@
-
-## [2.0.13] - 2025-05-30
-
-- No changes logged.
-
+[{"version":"v2.0.13","commits":[{"id":"6392dd3ce23899ca806ff1942c647ecc440e5dbf","message":"release 2.0.13","body":null,"footers":[],"group":"Miscellaneous Tasks","breaking_description":null,"breaking":false,"scope":null,"links":[],"author":{"name":"Robert Schroeder","email":"robjschroeder@gmail.com","timestamp":1748611865},"committer":{"name":"Robert Schroeder","email":"robjschroeder@gmail.com","timestamp":1748611865},"conventional":true}],"commit_id":"6392dd3ce23899ca806ff1942c647ecc440e5dbf","timestamp":1748611865,"previous":{"version":null,"commits":[],"commit_id":null,"timestamp":0,"previous":null}}]
