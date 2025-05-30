@@ -1,8 +1,8 @@
 #!/bin/zsh
 
-# Jamf DDM SOFA Processor (v2.0.10)
+# Jamf DDM SOFA Processor
 # by Robert Schroeder (@robjschroeder)
-# Updated: 2025-05-29
+# https://github.com/robjschroeder/jamf-ddm-sofa-macOS
 
 # === API Configuration ===
 jamf_client_id=""
@@ -14,8 +14,8 @@ sofa_uri="https://sofafeed.macadmins.io/v1/macos_data_feed.json"
 
 # === Script Defaults ===
 script_name="Jamf DDM SOFA Processor"
-script_version="2.0.10"
-script_date="2025-05-29"
+script_version="2.0.11b1"
+script_date="2025-05-30"
 log_level="INFO"
 dry_run="false"
 version_type="LATEST_MINOR"
@@ -24,10 +24,10 @@ update_action="DOWNLOAD_INSTALL_SCHEDULE"
 # === Group Config ===
 # Smart Group IDs
 typeset -A smart_group_ids=( 
-    AlphaGroup 1060
-    # BetaGroup 1061
-    GammaGroup 1062
-    ReleaseGroup 1327
+    AlphaGroup 5
+    BetaGroup 6
+    GammaGroup 7
+    ReleaseGroup 9
 )
 
 # Smart Group Deferral Days
@@ -85,7 +85,8 @@ function parse_cli_credentials() {
 
   if [[ ${#missing[@]} -gt 0 ]]; then
     log_error "Missing required parameters: ${missing[*]}"
-    echo "Usage: $0 --jamf-client-id <id> --jamf-client-secret <secret> --jamf-uri <uri> --nvd-api-key <key> [other options]"
+    echo "Manual Usage: jamf-ddm-sofa --jamf-client-id <id> --jamf-client-secret <secret> --jamf-uri <uri> --nvd-api-key <key> [other options]"
+    echo "Or run: 'jamf-ddm-sofa --configure' to set these parameters in your Keychain."
     exit 1
   fi
 }
@@ -120,50 +121,74 @@ ${script_name} (${script_version})
 by Robert Schroeder (@robjschroeder)
 Revised: ${script_date}
 
-This script processes the SOFA JSON feed and creates update plans in Jamf Pro
-for devices in defined smart groups, based on CVE severity and deadlines.
+This script processes the macOS SOFA feed, evaluates CVE severity from the NVD API, and creates
+Declarative Software Update plans in Jamf Pro based on smart groups and policy logic.
 
     Usage:
-    zsh ./${script_name}.zsh [--jamf-client-id <jamf_clien_id>] [--jamf-client-secret <jamf_client_secret>] [--jamf_uri <https://instance.jamfcloud.com>] [--nvd-api-key <nvd_api_key>] [--dry-run] [--debug] [--macOS <version>] [--deadline <YYYY-MM-DD>] [--help]
+    jamf-ddm-sofa [--configure] [--jamf-client-id <jamf_client_id>] [--jamf-client-secret <jamf_client_secret>] [--jamf_uri <https://instance.jamfcloud.com>] [--nvd-api-key <nvd_api_key>] [--dry-run] [--debug] [--macOS <version>] [--deadline <YYYY-MM-DD>] [--help]
 
 
-    [no flags]  Creates update plans for all members of the defined smart groups,
-                using calculated deadlines, based on CVE severity.
+    [no flags]    Creates update plans for all members of the defined smart groups,
+                  using calculated deadlines, based on CVE severity.
 
-    --dry-run   Runs the script in dry run mode, which means it will not create any update plans.
+    --configure   Prompts for Jamf Pro API credentials and NVD API key, which are stored in your 'login' Keychain.
 
-    --debug     Enables debug mode
+    --dry-run     Runs the script in dry run mode, which means it will not create any update plans.
+
+    --debug       Enables debug mode
 
     --macOS <version>
-                Specifies a manual macOS version to use for the update plans.
-                If not specified, the script will use the latest version from the SOFA feed.
-                Example: --macOS 15.5
+                  Specifies a manual macOS version to use for the update plans.
+                  If not specified, the script will use the latest version from the SOFA feed.
+                  Example: --macOS 15.5
 
     --deadline <YYYY-MM-DD>
-                Sets the deadline for the update plans to the specified date: YYYY-MM-DD.
-                If not specified, the script will calculate deadlines based on CVE severity.
+                  Sets the deadline for the update plans to the specified date: YYYY-MM-DD.
+                  If not specified, the script will calculate deadlines based on CVE severity.
 
-    --help      Displays this message and exits
+    --help        Displays this message and exits
 
 
 
-    [Required Parameters]
+    [Required Parameters; see --configure for more details]
     --jamf-client-id <id>
-                The Jamf Pro API client ID for authentication.
+                  The Jamf Pro API client ID for authentication.
 
     --jamf-client-secret <secret>
-                The Jamf Pro API client secret for authentication.
+                  The Jamf Pro API client secret for authentication.
 
     --jamf-uri <uri>
-                The Jamf Pro API base URI (e.g., https://your-jamf-pro-url).
+                  The Jamf Pro API base URI (e.g., https://your-jamf-pro-url).
 
     --nvd-api-key <key>
-                The NVD API key for fetching CVE data.
+                  The NVD API key for fetching CVE data.
 
     "
     exit
 }
 
+# === Display Configure Function ===
+function displayConfigure() {
+
+    set_terminal_size '\e[8;52;140t' '\e[3;2;2t'
+
+    local jamf_pro_uri=$( /usr/bin/defaults read "/Library/Preferences/com.jamfsoftware.jamf.plist" jss_url )
+
+    echo "
+${script_name} (${script_version})
+by Robert Schroeder (@robjschroeder)
+Revised: ${script_date}
+
+Configure: Use the following commands to create entries in Keychain Access:
+
+    security add-generic-password -s \"jamf-ddm-sofa_uri\" -a ${USER} -w \"${jamf_pro_uri}\"
+    security add-generic-password -s \"jamf-ddm-sofa_client_id\" -a ${USER} -w \"jamf-ddm-sofa Client ID Goes Here\"
+    security add-generic-password -s \"jamf-ddm-sofa_client_secret\" -a ${USER} -w \"jamf-ddm-sofa Client Secret Goes Here\"
+    security add-generic-password -s \"jamf-ddm-sofa_nvd_api_key\" -a ${USER} -w \"jamf-ddm-sofa NVD API Key Goes Here\"
+
+    "
+    exit
+}
 
 
 # === Dry Run Check ===
@@ -638,6 +663,9 @@ function main() {
             -h|--help )
                 displayHelp
                 ;;
+            -c|--configure )
+                displayConfigure
+                ;;
             -m|--macOS )
                 shift
                 if [[ -z "$1" ]]; then
@@ -694,6 +722,12 @@ function main() {
         shift
     done
 
+    # Check if required parameters are set in the user's Keychain
+    jamf_client_id=$(security find-generic-password -s "jamf-ddm-sofa_client_id" -a "$USER" -w 2>/dev/null)
+    jamf_client_secret=$(security find-generic-password -s "jamf-ddm-sofa_client_secret" -a "$USER" -w 2>/dev/null)
+    jamf_uri=$(security find-generic-password -s "jamf-ddm-sofa_uri" -a "$USER" -w 2>/dev/null)
+    nvd_api_key=$(security find-generic-password -s "jamf-ddm-sofa_nvd_api_key" -a "$USER" -w 2>/dev/null)
+
     local missing=()
     [[ -z "$jamf_client_id" ]] && missing+=(--jamf-client-id)
     [[ -z "$jamf_client_secret" ]] && missing+=(--jamf-client-secret)
@@ -702,7 +736,8 @@ function main() {
 
     if [[ ${#missing[@]} -gt 0 ]]; then
       log_error "Missing required parameters: ${missing[*]}"
-      echo "Usage: $0 --jamf-client-id <id> --jamf-client-secret <secret> --jamf-uri <uri> --nvd-api-key <key> [other options]"
+      echo "Manual Usage: jamf-ddm-sofa --jamf-client-id <id> --jamf-client-secret <secret> --jamf-uri <uri> --nvd-api-key <key> [other options]"
+      echo "Or run: 'jamf-ddm-sofa --configure' to set these parameters in your Keychain."
       exit 1
     fi
 
