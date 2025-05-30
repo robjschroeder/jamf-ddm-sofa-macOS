@@ -13,13 +13,19 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Generate changelog
-        uses: heinrichreimer/github-changelog-generator-action@v2.2
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          futureRelease: ${{ github.ref_name }}
-          output: CHANGELOG.md
+          fetch-depth: 0  # Required for full git history
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install changelog tool
+        run: npm install -g auto-changelog
+
+      - name: Generate CHANGELOG.md
+        run: auto-changelog -p --output CHANGELOG.md
 
       - name: Commit changelog
         run: |
@@ -27,4 +33,4 @@ jobs:
           git config user.email "github-actions@github.com"
           git add CHANGELOG.md
           git commit -m "chore: update CHANGELOG for ${{ github.ref_name }}"
-          git push
+          git push origin HEAD:main
