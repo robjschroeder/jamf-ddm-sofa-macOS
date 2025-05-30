@@ -23,13 +23,6 @@ jobs:
           mkdir -p dist
           zip -r dist/jamf-ddm-sofa-cli.zip bin install.sh man README.md LICENSE
 
-      - name: Generate changelog
-        uses: orhun/git-cliff-action@v2
-        with:
-          args: -o CHANGELOG.md
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Commit and push changelog
         run: |
           git config user.name "github-actions"
