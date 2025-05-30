@@ -33,7 +33,13 @@ jobs:
           git config user.email "github-actions@github.com"
 
       - name: Generate CHANGELOG.md
-        run: auto-changelog --tag-prefix v --output CHANGELOG.md
+        run: |
+          auto-changelog \
+            --output CHANGELOG.md \
+            --tag-prefix v \
+            --commit-limit false \
+            --template keepachangelog
+
 
       - name: Configure Git
         run: |
