@@ -14,7 +14,7 @@ sofa_uri="https://sofafeed.macadmins.io/v1/macos_data_feed.json"
 
 # === Script Defaults ===
 script_name="Jamf DDM SOFA Processor"
-script_version="2.0.16"
+script_version="2.0.17b1"
 script_date="2025-05-30"
 log_level="INFO"
 dry_run="false"
@@ -537,7 +537,8 @@ EOF
   if [[ "$status_code" == "201" ]]; then
     local plan_id=$(jq -r '.plans[0].planId' /tmp/plan_response.json)
     log_info "Update plan created. Plan ID: $plan_id"
-    log_info "View plan: $jamf_uri/api/v1/managed-software-updates/plans/$plan_id"
+    log_info "View plan in Jamf Pro API: $jamf_uri/api/v1/managed-software-updates/plans/$plan_id"
+    log_info "View plan in Terminal: jq . /tmp/jamf_ddm_plans/$deadline/*.json"
     get_existing_plan "$device_id" "$deadline"
   else
     log_warn "Failed to create update plan. Status: $status_code"
@@ -630,6 +631,7 @@ function process_group_devices() {
 
     if [[ "$existing_count" -gt 0 ]]; then
       log_warn "Existing plan(s) found for $device_name ($device_id) with same deadline. Skipping."
+      log_info "View plan in Terminal: jq . /tmp/jamf_ddm_plans/$force_date/$device_id.json"
     else
       log_info "Creating update plan for $device_name from $current_version to $to_version with deadline $force_date"
 
