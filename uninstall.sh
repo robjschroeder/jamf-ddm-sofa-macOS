@@ -34,6 +34,24 @@ function uninstall_man_page() {
     fi
 }
 
+function uninstall_keychain_entries() {
+    lastUser=$( defaults read /Library/Preferences/com.apple.loginwindow.plist lastUserName )
+    timestamp=$( date '+%Y-%m-%d-%H%M%S' )
+    echo ""
+    echo "🧹 Complete the following steps in a new Terminal window to remove your"
+    echo "   Jamf DDM SOFA Processor-related Keychain entries."
+    echo ""
+    echo "1. Back up your keychain:"
+    echo "cp -v ~/Library/Keychains/login.keychain-db{,-backup-${timestamp}}"
+    echo ""
+    echo "2. Remove your keychain entries:"
+    echo "security delete-generic-password -s jamf-ddm-sofa_uri -a ${lastUser}"
+    echo "security delete-generic-password -s jamf-ddm-sofa_client_id -a ${lastUser}"
+    echo "security delete-generic-password -s jamf-ddm-sofa_client_secret -a ${lastUser}"
+    echo "security delete-generic-password -s jamf-ddm-sofa_nvd_api_key -a ${lastUser}"
+    echo ""
+}
+
 function confirm_removal() {
     echo "✅ $BIN_NAME uninstalled."
 }
@@ -42,4 +60,5 @@ function confirm_removal() {
 check_root
 uninstall_cli
 uninstall_man_page
+uninstall_keychain_entries
 confirm_removal

@@ -653,6 +653,9 @@ function main() {
         elif [[ "$arg" == "--version" || "$arg" == "-v" ]]; then
             printf "\n${script_name} (${script_version}) by Robert Schroeder. Revised: ${script_date}.\n\n"
             exit 0
+        elif [[ "$arg" == "--configure" || "$arg" == "-c" ]]; then
+            displayConfigure
+            exit 0
         fi
     done
     
