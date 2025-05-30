@@ -1,6 +1,12 @@
 
 ## [2.0.15] - 2025-05-30
 
+- Merged PR #7 into main
+- chore: update CHANGELOG for v2.0.15b1
+
+
+## [2.0.15] - 2025-05-30
+
 - chore: update CHANGELOG for v2.0.15b1
 
 ### Changelog
