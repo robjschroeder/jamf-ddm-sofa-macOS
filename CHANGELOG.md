@@ -1,13 +1,3 @@
-
-## [2.0.15b1] - 2025-05-30
-
-- Merge pull request #7 from dan-snelson/uninstall_keychain_entries
-- Create jamf-ddm-sofa
-- Added 'uninstall_keychain_entries' function (removed changes to 'jamf-ddm-sofa')
-- Added 'uninstall_keychain_entries' function
-- Remove .DS_Store and ignore it forever
-- chore: update CHANGELOG for v2.0.15
-
 ### Changelog
 
 All notable changes to this project will be documented in this file. Dates are displayed in UTC.
