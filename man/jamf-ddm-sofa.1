@@ -1,10 +1,11 @@
 .TH JAMF-DDM-SOFA 1 "May 2025" "jamf-ddm-sofa 1.0" "User Commands"
+
 .SH NAME
 jamf-ddm-sofa \- Jamf Pro DDM Software Update Automation using SOFA feed
 
 .SH SYNOPSIS
 .B jamf-ddm-sofa
-[IoptionsR]
+[\fIoptions\fR]
 
 .SH DESCRIPTION
 jamf-ddm-sofa is a command-line tool that processes the macOS SOFA feed,
@@ -13,38 +14,47 @@ Update plans in Jamf Pro based on smart groups and policy logic.
 
 .SH OPTIONS
 .TP
-B--jamf-client-idR <id>
+.B --jamf-client-id \fI<id>\fR
 Jamf Pro API Client ID.
+
 .TP
-B--jamf-client-secretR <secret>
+.B --jamf-client-secret \fI<secret>\fR
 Jamf Pro API Client Secret.
+
 .TP
-B--jamf-uriR <uri>
+.B --jamf-uri \fI<uri>\fR
 Jamf Pro base URI (e.g., https://yourcompany.jamfcloud.com).
+
 .TP
-B--nvd-api-keyR <key>
+.B --nvd-api-key \fI<key>\fR
 API key for the NVD CVE API.
+
 .TP
-B--macOSR <version>
+.B --macOS \fI<version>\fR
 Override the auto-detected latest macOS version (e.g., 15.5).
+
 .TP
-B--deadlineR <YYYY-MM-DD>
+.B --deadline \fI<YYYY-MM-DD>\fR
 Override the calculated deadline.
+
 .TP
-B--dry-runR
+.B --dry-run
 Run the script without creating update plans.
+
 .TP
-B--debugR
+.B --debug
 Enable detailed debug output.
+
 .TP
-B--helpR
+.B --help
 Show this help page.
+
 .TP
-B--versionR
+.B --version
 Display version information.
 
 .SH AUTHOR
 Robert Schroeder (@robjschroeder)
 
 .SH SEE ALSO
-jamf(1), jq(1), curl(1)
+.B jamf(1), jq(1), curl(1)
