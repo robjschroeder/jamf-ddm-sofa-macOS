@@ -1,6 +1,6 @@
 #!/bin/zsh
 
-# Jamf DDM SOFA Processor (v2.0.9)
+# Jamf DDM SOFA Processor (v2.0.10)
 # by Robert Schroeder (@robjschroeder)
 # Updated: 2025-05-29
 
@@ -14,7 +14,7 @@ sofa_uri="https://sofafeed.macadmins.io/v1/macos_data_feed.json"
 
 # === Script Defaults ===
 script_name="Jamf DDM SOFA Processor"
-script_version="2.0.9"
+script_version="2.0.10"
 script_date="2025-05-29"
 log_level="INFO"
 dry_run="false"

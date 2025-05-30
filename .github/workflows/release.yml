@@ -1,4 +1,4 @@
-name: Create Release
+name: Release
 
 on:
   push:
@@ -10,11 +10,9 @@ permissions:
 
 jobs:
   release:
-    name: Create GitHub Release
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout source
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Set up zip utility
@@ -24,6 +22,13 @@ jobs:
         run: |
           mkdir -p dist
           zip -r dist/jamf-ddm-sofa-cli.zip bin install.sh man README.md LICENSE
+
+      - name: Delete existing release (if exists)
+        uses: dev-drprasad/delete-tag-and-release@v1.1
+        with:
+          tag_name: ${{ github.ref_name }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
