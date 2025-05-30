@@ -14,7 +14,7 @@ sofa_uri="https://sofafeed.macadmins.io/v1/macos_data_feed.json"
 
 # === Script Defaults ===
 script_name="Jamf DDM SOFA Processor"
-script_version="2.0.14b8"
+script_version="2.0.15"
 script_date="2025-05-30"
 log_level="INFO"
 dry_run="false"
@@ -722,11 +722,11 @@ function main() {
         shift
     done
 
-    # Check if required parameters are set in the user's Keychain
-    jamf_client_id=$(security find-generic-password -s "jamf-ddm-sofa_client_id" -a "$USER" -w 2>/dev/null)
-    jamf_client_secret=$(security find-generic-password -s "jamf-ddm-sofa_client_secret" -a "$USER" -w 2>/dev/null)
-    jamf_uri=$(security find-generic-password -s "jamf-ddm-sofa_uri" -a "$USER" -w 2>/dev/null)
-    nvd_api_key=$(security find-generic-password -s "jamf-ddm-sofa_nvd_api_key" -a "$USER" -w 2>/dev/null)
+    # Fallback to Keychain only if CLI args not provided
+    [[ -z "$jamf_client_id" ]] && jamf_client_id=$(security find-generic-password -s "jamf-ddm-sofa_client_id" -a "$USER" -w 2>/dev/null)
+    [[ -z "$jamf_client_secret" ]] && jamf_client_secret=$(security find-generic-password -s "jamf-ddm-sofa_client_secret" -a "$USER" -w 2>/dev/null)
+    [[ -z "$jamf_uri" ]] && jamf_uri=$(security find-generic-password -s "jamf-ddm-sofa_uri" -a "$USER" -w 2>/dev/null)
+    [[ -z "$nvd_api_key" ]] && nvd_api_key=$(security find-generic-password -s "jamf-ddm-sofa_nvd_api_key" -a "$USER" -w 2>/dev/null)
 
     local missing=()
     [[ -z "$jamf_client_id" ]] && missing+=(--jamf-client-id)
@@ -735,10 +735,10 @@ function main() {
     [[ -z "$nvd_api_key" ]] && missing+=(--nvd-api-key)
 
     if [[ ${#missing[@]} -gt 0 ]]; then
-      log_error "Missing required parameters: ${missing[*]}"
-      echo "Manual Usage: jamf-ddm-sofa --jamf-client-id <id> --jamf-client-secret <secret> --jamf-uri <uri> --nvd-api-key <key> [other options]"
-      echo "Or run: 'jamf-ddm-sofa --configure' to set these parameters in your Keychain."
-      exit 1
+        log_error "Missing required parameters: ${missing[*]}"
+        echo "Manual Usage: jamf-ddm-sofa --jamf-client-id <id> --jamf-client-secret <secret> --jamf-uri <uri> --nvd-api-key <key> [other options]"
+        echo "Or run: 'jamf-ddm-sofa --configure' to set these parameters in your Keychain."
+        exit 1
     fi
 
         echo "

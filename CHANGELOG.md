@@ -1,3 +1,10 @@
+
+## [2.0.15] - 2025-05-30
+
+- Update issue templates
+- Create LICENSE
+- chore: update CHANGELOG for v2.0.14b8
+
 ### Changelog
 
 All notable changes to this project will be documented in this file. Dates are displayed in UTC.
