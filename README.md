@@ -1,12 +1,12 @@
 # jamf-ddm-sofa
 
-`jamf-ddm-sofa` is a command-line utility that automates the creation of Jamf Pro Declarative Device Management (DDM) Software Update Plans based on the SOFA feed and NVD CVE severity data.
+`jamf-ddm-sofa` is a command-line utility that automates the creation of Declarative Device Management (DDM) Jamf Pro Managed Software Update Plans, based on the Simple Organized Feed for Apple Software Updates (SOFA) feed and National Vulnerability Database (NVD) CVE severity data.
 
 ## 📦 Features
 
-- Evaluates macOS updates from the [SOFA feed](https://sofafeed.macadmins.io)
-- Calculates deadlines based on NVD CVE severity
-- Creates Jamf Software Update Plans per smart group
+- Evaluates macOS updates from the [SOFA](https://sofafeed.macadmins.io) feed
+- Calculates deadlines based on [National Vulnerability Database](https://nvd.nist.gov/developers/request-an-api-key) CVE severity
+- Creates [Jamf Managed Software Update](https://learn.jamf.com/en-US/bundle/jamf-pro-documentation-11.17.0/page/Managed_Software_Updates.html) Plans per smart group
 - Supports `--dry-run`, `--debug`, and manual overrides
 - Designed to run interactively or in automation
 
@@ -14,7 +14,7 @@
 
 ```bash
 git clone https://github.com/robjschroeder/jamf-ddm-sofa-macOS.git
-cd jamf-ddm-sofa
+cd jamf-ddm-sofa-macOS
 sudo ./install.sh
 ```
 
