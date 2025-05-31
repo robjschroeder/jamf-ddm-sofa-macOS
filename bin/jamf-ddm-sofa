@@ -14,7 +14,7 @@ sofa_uri="https://sofafeed.macadmins.io/v1/macos_data_feed.json"
 
 # === Script Defaults ===
 script_name="Jamf DDM SOFA Processor"
-script_version="2.0.17b1"
+script_version="2.0.17b2"
 script_date="2025-05-31"
 log_level="INFO"
 dry_run="false"
@@ -48,6 +48,36 @@ typeset -A version_type_overrides=(
     # GammaGroup "LATEST_ANY"
     # ReleaseGroup "LATEST_ANY" 
 )
+
+# Smart Group macOS Version Overrides
+# This allows you to control which specific groups override the SOFA / NVD macOS version calculation.
+# For example, comment-out all testing-related groups to leverage the script's SOFA / NVD macOS version
+# calculation, even if the '--macOS' CLI parameter is specified.
+typeset macos_version_overrides=( 
+    # AlphaGroup
+    # BetaGroup
+    # GammaGroup
+    ReleaseGroup
+)
+
+# Smart Group Deadline Overrides
+# This allows you to control which specific groups override the SOFA / NVD deadline calculation.
+# For example, comment-out all testing-related groups to leverage the script's SOFA / NVD deadline
+# calculation, even if the '--deadline' CLI parameter is specified.
+typeset deadline_overrides=( 
+    # AlphaGroup
+    # BetaGroup
+    # GammaGroup
+    ReleaseGroup 
+)
+
+# === Script Header ===
+function script_header() { echo "
+${script_name} (${script_version})
+by Robert Schroeder (@robjschroeder)
+Revised: ${script_date}
+"
+}
 
 # === Logging Functions ===
 function log() {
@@ -84,11 +114,7 @@ function parse_cli_credentials() {
   [[ -z "$nvd_api_key" ]] && missing+=(--nvd-api-key)
 
   if [[ ${#missing[@]} -gt 0 ]]; then
-    echo "
-${script_name} (${script_version})
-by Robert Schroeder (@robjschroeder)
-Revised: ${script_date}
-"
+    script_header
     log_error "Missing required parameters: ${missing[*]}"
     echo ""
     echo "Manual Usage: jamf-ddm-sofa --jamf-client-id <id> --jamf-client-secret <secret> --jamf-uri <uri> --nvd-api-key <key> [other options]"
@@ -119,21 +145,18 @@ function set_terminal_size() {
 }
 
 # === Display Help Function ===
-function displayHelp() {
+function display_help() {
 
     set_terminal_size '\e[8;52;140t' '\e[3;2;2t'
 
-    echo "
-${script_name} (${script_version})
-by Robert Schroeder (@robjschroeder)
-Revised: ${script_date}
+    script_header
 
+    echo "
 This script processes the macOS SOFA feed, evaluates CVE severity from the NVD API, and creates
 Declarative Software Update plans in Jamf Pro based on smart groups and policy logic.
 
     Usage:
     jamf-ddm-sofa [--configure] [--jamf-client-id <jamf_client_id>] [--jamf-client-secret <jamf_client_secret>] [--jamf_uri <https://instance.jamfcloud.com>] [--nvd-api-key <nvd_api_key>] [--dry-run] [--debug] [--macOS <version>] [--deadline <YYYY-MM-DD>] [--help]
-
 
     [no flags]    Creates update plans for all members of the defined smart groups,
                   using calculated deadlines, based on CVE severity.
@@ -175,16 +198,15 @@ Declarative Software Update plans in Jamf Pro based on smart groups and policy l
 }
 
 # === Display Configure Function ===
-function displayConfigure() {
+function display_configure() {
 
     set_terminal_size '\e[8;52;140t' '\e[3;2;2t'
 
     local jamf_pro_uri=$( /usr/bin/defaults read "/Library/Preferences/com.jamfsoftware.jamf.plist" jss_url )
 
+    script_header
+
     echo "
-${script_name} (${script_version})
-by Robert Schroeder (@robjschroeder)
-Revised: ${script_date}
 
 Configure: Use the following commands to create entries in Keychain Access:
 
@@ -607,21 +629,27 @@ function process_group_devices() {
     local force_date=$(echo "$dates" | cut -d'|' -f2)
     local to_version="${os_versions[$best_match,version]}"
 
-    if [[ -n "${manual_deadline}" ]]; then
+    if [[ -n "${manual_deadline}" && " ${deadline_overrides[@]} " =~ " ${group_name} " ]]; then
       force_date="${manual_deadline}T18:00:00"
-      log_info "Using manual force date: $force_date"
+      log_info "Using a manual force date of $force_date for group '$group_name'."
     fi
 
-    if [[ -n "${manual_macos_version}" ]]; then
+    if [[ -n "${manual_macos_version}" && " ${macos_version_overrides[@]} " =~ " ${group_name} " ]]; then
       to_version="${manual_macos_version}"
-      log_info "Using manual macOS version: $to_version"
+      log_info "Using a manual macOS $to_version for group '$group_name'."
     fi
 
     # If force_date is in the past, adjust to tomorrow at 18:00:00
+    # Convert both dates to epoch seconds for accurate comparison
     current_utc=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-    if [[ "$force_date" < "$current_utc" ]]; then
-        force_date="$(date -u -v+1d +"%Y-%m-%d")T18:00:00"
-        log_warn "Force date was in the past. Adjusted to tomorrow: $force_date"
+    force_date_epoch=$(date -j -f "%Y-%m-%dT%H:%M:%S" "${force_date}" "+%s" 2>/dev/null)
+    current_utc_epoch=$(date -j -f "%Y-%m-%dT%H:%M:%SZ" "${current_utc}" "+%s" 2>/dev/null)
+    if [[ -n "$force_date_epoch" && -n "$current_utc_epoch" && "$force_date_epoch" -lt "$current_utc_epoch" && " ${deadline_overrides[@]} " =~ " ${group_name} " ]]; then
+      log_warn "Original force date, ($force_date), is in the past."
+      force_date="$(date -u -v+1d +"%Y-%m-%d")T18:00:00"
+      log_warn "Adjusted force date to tomorrow: $force_date"
+    elif [[ -n "$force_date_epoch" && -n "$current_utc_epoch" && "$force_date_epoch" -lt "$current_utc_epoch" ]]; then
+      log_warn "Force date, $force_date, is in the past; users will have ONE HOUR to install the update."
     fi
 
     log_info "Eligible update: $device_name → $to_version by $force_date"
@@ -636,7 +664,7 @@ function process_group_devices() {
       log_info "Creating update plan for $device_name from $current_version to $to_version with deadline $force_date"
 
       if is_dry_run; then
-        log_info "[Dry Run] Skipping actual update plan creation for $device_name ($device_id)"
+        log_info "[DRY RUN] Skipping actual update plan creation for $device_name ($device_id)"
       else
         create_software_update_plan "$device_id" "$version_type" "$force_date" "$update_action"
         sleep 1
@@ -657,13 +685,13 @@ function main() {
 
     for arg in "$@"; do
         if [[ "$arg" == "--help" || "$arg" == "-h" ]]; then
-            displayHelp
+            display_help
             exit 0
         elif [[ "$arg" == "--version" || "$arg" == "-v" ]]; then
-            printf "\n${script_name} (${script_version}) by Robert Schroeder. Revised: ${script_date}.\n\n"
+            script_header
             exit 0
         elif [[ "$arg" == "--configure" || "$arg" == "-c" ]]; then
-            displayConfigure
+            display_configure
             exit 0
         fi
     done
@@ -673,20 +701,22 @@ function main() {
     do
         case "$1" in
             -h|--help )
-                displayHelp
+                display_help
                 ;;
             -c|--configure )
-                displayConfigure
+                display_configure
                 ;;
             -m|--macOS )
                 shift
                 if [[ -z "$1" ]]; then
+                    script_header
                     echo "Error: '--macOS' requires a version (e.g., 15.5)"
                     exit 1
                 fi
                 if [[ "$1" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]]; then
                     manual_macos_version="$1"
                 else
+                    script_header
                     echo "Error: '--macOS' must be a valid macOS version (e.g., 15.5)"
                     exit 1
                 fi
@@ -694,14 +724,26 @@ function main() {
             -d|--deadline )
                 shift
                 if [[ -z "$1" ]]; then
+                    script_header
                     echo "Error: '--deadline' must be in format YYYY-MM-DD (MM=01-12, DD=01-31)"
                     exit 1
                 fi
-                if [[ "$1" =~ ^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|31)$ ]]; then
+                if [[ "$1" =~ ^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$ ]]; then
+                  # Check if the date is valid (e.g., not 2024-02-31)
+                  parsed_date=$(date -j -f "%Y-%m-%d" "$1" "+%Y-%m-%d" 2>/dev/null)
+                  if [[ "$parsed_date" == "$1" ]]; then
                     manual_deadline="$1"
-                else
-                    echo "Error: '--deadline' must be in format YYYY-MM-DD (MM=01-12, DD=01-31)"
+                  else
+                    script_header
+                    echo "Error: '--deadline' value '$1' is not a valid calendar date."
+                    echo "Please check your input and try again."
                     exit 1
+                  fi
+                else
+                  script_header
+                  echo "Error: '--deadline' must be in format YYYY-MM-DD (MM=01-12, DD=01-31) but was specified as '$1'."
+                  echo "Please check your input and try again."
+                  exit 1
                 fi
                 ;;
             --dry-run )
@@ -711,7 +753,7 @@ function main() {
                 log_level="DEBUG"
                 ;;
             -v|--version )
-                printf "\n${script_name} (${script_version}) by Robert Schroeder. Revised: ${script_date}.\n\n"
+                script_header
                 exit 0
                 ;;
             --jamf-client-id )
@@ -728,7 +770,7 @@ function main() {
                 ;;
             *)
                 echo "Unknown argument: $1"
-                displayHelp
+                display_help
                 ;;
         esac
         shift
@@ -747,11 +789,7 @@ function main() {
     [[ -z "$nvd_api_key" ]] && missing+=(--nvd-api-key)
 
     if [[ ${#missing[@]} -gt 0 ]]; then
-        echo "
-${script_name} (${script_version})
-by Robert Schroeder (@robjschroeder)
-Revised: ${script_date}
-"
+        script_header
         log_error "Missing required parameters: ${missing[*]}"
         echo ""
         echo "Manual Usage: jamf-ddm-sofa --jamf-client-id <id> --jamf-client-secret <secret> --jamf-uri <uri> --nvd-api-key <key> [other options]"
@@ -760,37 +798,50 @@ Revised: ${script_date}
         exit 1
     fi
 
+        script_header
         echo "
-    ${script_name} (${script_version})
-    by Robert Schroeder (@robjschroeder)
-
-        This script processes the SOFA JSON feed and creates update plans in Jamf Pro
-        for devices in defined smart groups, based on CVE severity and deadlines.
-    "
+    This script processes the SOFA JSON feed and creates update plans in Jamf Pro
+    for devices in defined smart groups, based on CVE severity and deadlines.
+"
 
     if [[ "${log_level}" == "DEBUG" ]]; then
-        echo "    Debug mode enabled. Additional debug information will be logged."
-        masked_jamf_client_id="${jamf_client_id:0:3}$(printf '%*s' $((${#jamf_client_id}-4)) '' | tr ' ' '*')${jamf_client_id: -3}"
-        masked_jamf_client_secret="${jamf_client_secret:0:3}$(printf '%*s' $((${#jamf_client_secret}-4)) '' | tr ' ' '*')${jamf_client_secret: -3}"
-        masked_nvd_api_key="${nvd_api_key:0:3}$(printf '%*s' $((${#nvd_api_key}-4)) '' | tr ' ' '*')${nvd_api_key: -3}"
-        echo ""
-        echo "                  jamf_uri: $jamf_uri"
-        echo "            jamf_client_id: $masked_jamf_client_id"
-        echo "        jamf_client_secret: $masked_jamf_client_secret"
-        echo "               nvd_api_key: $masked_nvd_api_key"
+      echo "    Debug mode enabled. Additional debug information will be logged."
+      masked_jamf_client_id="${jamf_client_id:0:3}$(printf '%*s' $((${#jamf_client_id}-4)) '' | tr ' ' '*')${jamf_client_id: -3}"
+      masked_jamf_client_secret="${jamf_client_secret:0:3}$(printf '%*s' $((${#jamf_client_secret}-4)) '' | tr ' ' '*')${jamf_client_secret: -3}"
+      masked_nvd_api_key="${nvd_api_key:0:3}$(printf '%*s' $((${#nvd_api_key}-4)) '' | tr ' ' '*')${nvd_api_key: -3}"
+      echo ""
+      echo "                  jamf_uri: $jamf_uri"
+      echo "            jamf_client_id: $masked_jamf_client_id"
+      echo "        jamf_client_secret: $masked_jamf_client_secret"
+      echo "               nvd_api_key: $masked_nvd_api_key"
     fi
 
     if [[ "${dry_run}" == "true" ]]; then
-        echo ""
-        echo "    Performing dry run. No update plans will be created."
+      printf "\n    Performing dry run. No update plans will be created.\n"
     fi
 
     if [[ -n "${manual_macos_version}" ]]; then
-        printf "\n    Manual macOS version set to: ${manual_macos_version}\n"
+      echo ""
+      if [[ "${#macos_version_overrides[@]}" -gt 0 ]]; then
+        echo "    macOS ${manual_macos_version} will be applied to the following group(s):"
+        for group in ${(k)macos_version_overrides}; do
+          echo "    • $group"
+        done
+      else
+        echo "    WARNING: macOS ${manual_macos_version} was specified, but no enabled groups were found in the 'macos_version_overrides' array."
+      fi
     fi
 
     if [[ -n "${manual_deadline}" ]]; then
-        echo "         Manual deadline set to: ${manual_deadline}T18:00:00"
+      echo ""
+      if [[ "${#deadline_overrides[@]}" -gt 0 ]]; then
+        echo "    Deadline ${manual_deadline}T18:00:00 will be applied to the following group(s):"
+        for group in ${(k)deadline_overrides}; do
+          echo "    • $group"
+        done
+      else
+        echo "    WARNING: Deadline ${manual_deadline} was specified, but no enabled groups were found in the 'deadline_overrides' array."
+      fi
     fi
 
     echo ""
