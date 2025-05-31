@@ -15,7 +15,7 @@ sofa_uri="https://sofafeed.macadmins.io/v1/macos_data_feed.json"
 # === Script Defaults ===
 script_name="Jamf DDM SOFA Processor"
 script_version="2.0.17b1"
-script_date="2025-05-30"
+script_date="2025-05-31"
 log_level="INFO"
 dry_run="false"
 version_type="LATEST_MINOR"
