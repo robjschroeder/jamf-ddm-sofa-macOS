@@ -14,8 +14,8 @@ sofa_uri="https://sofafeed.macadmins.io/v1/macos_data_feed.json"
 
 # === Script Defaults ===
 script_name="Jamf DDM SOFA Processor"
-script_version="2.0.17b4"
-script_date="2025-06-02"
+script_version="2.0.17b5"
+script_date="2025-06-03"
 log_level="INFO"
 dry_run="false"
 version_type="LATEST_MINOR"
@@ -36,7 +36,7 @@ typeset -A deferral_days=(
     AlphaGroup 0
     BetaGroup 3
     GammaGroup 5
-    ReleaseGroup 30
+    ReleaseGroup 10
 )
 
 # Smart Group Version Type Overrides
