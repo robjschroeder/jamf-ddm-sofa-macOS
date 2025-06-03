@@ -14,7 +14,7 @@ sofa_uri="https://sofafeed.macadmins.io/v1/macos_data_feed.json"
 
 # === Script Defaults ===
 script_name="Jamf DDM SOFA Processor"
-script_version="2.0.18"
+script_version="2.0.18b1"
 script_date="2025-06-03"
 log_level="INFO"
 dry_run="false"
@@ -156,42 +156,49 @@ This script processes the macOS SOFA feed, evaluates CVE severity from the NVD A
 Declarative Software Update plans in Jamf Pro based on smart groups and policy logic.
 
     Usage:
-    jamf-ddm-sofa [--configure] [--jamf-client-id <jamf_client_id>] [--jamf-client-secret <jamf_client_secret>] [--jamf_uri <https://instance.jamfcloud.com>] [--nvd-api-key <nvd_api_key>] [--dry-run] [--debug] [--macOS <version>] [--deadline <YYYY-MM-DD>] [--help]
+    jamf-ddm-sofa [--configure] [--configuration] [--jamf-client-id <jamf_client_id>] [--jamf-client-secret <jamf_client_secret>] [--jamf_uri <https://instance.jamfcloud.com>] [--nvd-api-key <nvd_api_key>] [--dry-run] [--debug] [--macOS <version>] [--deadline <YYYY-MM-DD>] [--help]
 
     [no flags]    Creates update plans for all members of the defined smart groups,
                   using calculated deadlines, based on CVE severity.
 
-    --configure   Prompts for Jamf Pro API credentials and NVD API key, which are stored in your 'login' Keychain.
+    --configure
+        Prompts for Jamf Pro API credentials and NVD API key, which are stored in your 'login' Keychain.
 
-    --dry-run     Runs the script in dry run mode, which means it will not create any update plans.
+    --configuration
+        Displays the current configuration of the script, including masked Jamf Pro API credentials and the masked NVD API key.
 
-    --debug       Enables debug mode
+    --dry-run
+        Runs the script in dry run mode, which means it will not create any update plans.
+
+    --debug
+        Enables debug mode
 
     --macOS <version>
-                  Specifies a manual macOS version to use for the update plans.
-                  If not specified, the script will use the latest version from the SOFA feed.
-                  Example: --macOS 15.5
+        Specifies a manual macOS version to use for the update plans.
+        If not specified, the script will use the latest version from the SOFA feed.
+        Example: --macOS 15.5
 
     --deadline <YYYY-MM-DD>
-                  Sets the deadline for the update plans to the specified date: YYYY-MM-DD.
-                  If not specified, the script will calculate deadlines based on CVE severity.
+        Sets the deadline for the update plans to the specified date: YYYY-MM-DD.
+        If not specified, the script will calculate deadlines based on CVE severity.
 
-    --help        Displays this message and exits
+    --help
+        Displays this message and exits
 
 
 
     [Required Parameters; see --configure for more details]
     --jamf-client-id <id>
-                  The Jamf Pro API client ID for authentication.
+        The Jamf Pro API client ID for authentication.
 
     --jamf-client-secret <secret>
-                  The Jamf Pro API client secret for authentication.
+        The Jamf Pro API client secret for authentication.
 
     --jamf-uri <uri>
-                  The Jamf Pro API base URI (e.g., https://your-jamf-pro-url).
+        The Jamf Pro API base URI (e.g., https://your-jamf-pro-url.jamfcloud.com).
 
     --nvd-api-key <key>
-                  The NVD API key for fetching CVE data.
+        The NVD API key for fetching CVE data.
 
     "
     exit
@@ -219,6 +226,79 @@ Configure: Use the following commands to create entries in Keychain Access:
     exit
 }
 
+# === Display Configuration Function ===
+function display_configuration() {
+
+    set_terminal_size '\e[8;52;140t' '\e[3;2;2t'
+
+    script_header
+
+    echo "=== API Configuration ==="
+    # Fallback to Keychain only if CLI args not provided
+    [[ -z "$jamf_client_id" ]] && jamf_client_id=$(security find-generic-password -s "jamf-ddm-sofa_client_id" -a "$USER" -w 2>/dev/null)
+    [[ -z "$jamf_client_secret" ]] && jamf_client_secret=$(security find-generic-password -s "jamf-ddm-sofa_client_secret" -a "$USER" -w 2>/dev/null)
+    [[ -z "$jamf_uri" ]] && jamf_uri=$(security find-generic-password -s "jamf-ddm-sofa_uri" -a "$USER" -w 2>/dev/null)
+    [[ -z "$nvd_api_key" ]] && nvd_api_key=$(security find-generic-password -s "jamf-ddm-sofa_nvd_api_key" -a "$USER" -w 2>/dev/null)
+    masked_jamf_client_id="${jamf_client_id:0:3}$(printf '%*s' $((${#jamf_client_id}-4)) '' | tr ' ' '*')${jamf_client_id: -3}"
+    masked_jamf_client_secret="${jamf_client_secret:0:3}$(printf '%*s' $((${#jamf_client_secret}-4)) '' | tr ' ' '*')${jamf_client_secret: -3}"
+    masked_nvd_api_key="${nvd_api_key:0:3}$(printf '%*s' $((${#nvd_api_key}-4)) '' | tr ' ' '*')${nvd_api_key: -3}"
+    echo "          jamf_uri: $jamf_uri"
+    echo "    jamf_client_id: $masked_jamf_client_id"
+    echo "jamf_client_secret: $masked_jamf_client_secret"
+    echo "       nvd_api_key: $masked_nvd_api_key"
+
+    echo ""
+
+    echo "=== Script Defaults ==="
+    echo "       script_name: $script_name"
+    echo "    script_version: $script_version"
+    echo "       script_date: $script_date"
+    echo "         log_level: $log_level"
+    echo "           dry_run: $dry_run"
+    echo "      version_type: $version_type"
+    echo "     update_action: $update_action"
+
+    echo ""
+
+    echo "=== Smart Group IDs ==="
+    for group_name in ${(k)smart_group_ids}; do
+        echo "• $group_name: ${smart_group_ids[$group_name]}"
+    done
+
+    echo ""
+
+    echo "=== Smart Group Deferral Days ==="
+    for group_name in ${(k)deferral_days}; do
+        echo "• $group_name: ${deferral_days[$group_name]} days"
+    done
+
+    echo ""
+
+    echo "=== Smart Group Version Type Overrides ==="
+    for group_name in ${(k)version_type_overrides}; do
+        echo "• $group_name: ${version_type_overrides[$group_name]}"
+    done
+
+    echo ""
+
+    echo "=== Smart Group macOS Version Overrides ==="
+    for group_name in $macos_version_overrides; do
+        # echo "• $group_name: ${os_versions[$group_name,version]}"
+        echo "• $group_name"
+    done
+
+    echo ""
+
+    echo "=== Smart Group Deadline Overrides ==="
+    for group_name in $deadline_overrides; do
+        # echo "• $group_name: ${os_versions[$group_name,deadline_days]} days"
+        echo "• $group_name"
+    done
+
+    echo ""
+    
+    exit
+}
 
 # === Dry Run Check ===
 # This function checks if the script is running in dry run mode.
@@ -588,7 +668,7 @@ EOF
     log_info "View plan in Jamf Pro API: $jamf_uri/api/v1/managed-software-updates/plans/$plan_id"
     log_info "View plan in Terminal: jq . /tmp/jamf_ddm_plans/$deadline/*.json"
     get_existing_plan "$device_id" "$deadline"
-    force_ddm_sync
+    # force_ddm_sync
   else
     log_warn "Failed to create update plan. Status: $status_code"
     cat /tmp/plan_response.json | jq . || cat /tmp/plan_response.json
@@ -690,7 +770,7 @@ function process_group_devices() {
     else
       if is_dry_run; then
         log_info "[DRY RUN] Skipping actual update plan creation for $device_name ($device_id)"
-        force_ddm_sync
+        # force_ddm_sync
       else
         if [[ -n "${manual_macos_version}" && " ${macos_version_overrides[@]} " =~ " ${group_name} " ]]; then
           manual_available_date=$(date -u -j -f "%Y-%m-%dT%H:%M:%SZ" -v+"$deferral"d "$manual_macos_version_release_date" +"%Y-%m-%dT00:00:00" 2>/dev/null)
@@ -729,10 +809,12 @@ function main() {
         elif [[ "$arg" == "--configure" || "$arg" == "-c" ]]; then
             display_configure
             exit 0
+        elif [[ "$arg" == "--configuration" ]]; then
+            display_configuration
+            exit 0
         fi
     done
     
-
     while test $# -gt 0
     do
         case "$1" in
@@ -741,6 +823,9 @@ function main() {
                 ;;
             -c|--configure )
                 display_configure
+                ;;
+            --configuration )
+                display_configuration
                 ;;
             -m|--macOS )
                 shift
