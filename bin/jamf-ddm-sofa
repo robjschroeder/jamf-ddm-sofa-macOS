@@ -14,8 +14,8 @@ sofa_uri="https://sofafeed.macadmins.io/v1/macos_data_feed.json"
 
 # === Script Defaults ===
 script_name="Jamf DDM SOFA Processor"
-script_version="2.0.17b2"
-script_date="2025-05-31"
+script_version="2.0.17b4"
+script_date="2025-06-02"
 log_level="INFO"
 dry_run="false"
 version_type="LATEST_MINOR"
@@ -36,7 +36,7 @@ typeset -A deferral_days=(
     AlphaGroup 0
     BetaGroup 3
     GammaGroup 5
-    ReleaseGroup 10
+    ReleaseGroup 30
 )
 
 # Smart Group Version Type Overrides
@@ -491,9 +491,6 @@ function get_existing_plan() {
 
     if [[ -z "$force_Install_Local_DateTime" ]]; then
         log_info "No existing plan."
-        existing_count="0"
-        total_count="0"
-        plan_uuid="empty"
         return 0
     fi
 
@@ -645,7 +642,7 @@ function process_group_devices() {
     force_date_epoch=$(date -j -f "%Y-%m-%dT%H:%M:%S" "${force_date}" "+%s" 2>/dev/null)
     current_utc_epoch=$(date -j -f "%Y-%m-%dT%H:%M:%SZ" "${current_utc}" "+%s" 2>/dev/null)
     if [[ -n "$force_date_epoch" && -n "$current_utc_epoch" && "$force_date_epoch" -lt "$current_utc_epoch" && " ${deadline_overrides[@]} " =~ " ${group_name} " ]]; then
-      log_warn "Original force date, ($force_date), is in the past."
+      log_warn "Original force date, $force_date, is in the past."
       force_date="$(date -u -v+1d +"%Y-%m-%d")T18:00:00"
       log_warn "Adjusted force date to tomorrow: $force_date"
     elif [[ -n "$force_date_epoch" && -n "$current_utc_epoch" && "$force_date_epoch" -lt "$current_utc_epoch" ]]; then
@@ -661,14 +658,22 @@ function process_group_devices() {
       log_warn "Existing plan(s) found for $device_name ($device_id) with same deadline. Skipping."
       log_info "View plan in Terminal: jq . /tmp/jamf_ddm_plans/$force_date/$device_id.json"
     else
-      log_info "Creating update plan for $device_name from $current_version to $to_version with deadline $force_date"
-
       if is_dry_run; then
         log_info "[DRY RUN] Skipping actual update plan creation for $device_name ($device_id)"
       else
+        if [[ -n "${manual_macos_version}" && " ${macos_version_overrides[@]} " =~ " ${group_name} " ]]; then
+          manual_available_date=$(date -u -j -f "%Y-%m-%dT%H:%M:%SZ" -v+"$deferral"d "$manual_macos_version_release_date" +"%Y-%m-%dT00:00:00" 2>/dev/null)
+          log_debug "Manual macOS version $manual_macos_version available date: $manual_available_date"
+          now_utc=$(date -u +"%Y-%m-%dT%H:%M:%S")
+          if [[ "$manual_available_date" > "$now_utc" ]]; then
+            log_warn "Manual macOS version $manual_macos_version for group '$group_name' will be available on: $manual_available_date. Skipping."
+            continue
+          fi
+        fi
+        log_info "Creating update plan for $device_name from $current_version to $to_version with deadline $force_date"
         create_software_update_plan "$device_id" "$version_type" "$force_date" "$update_action"
-        sleep 1
       fi
+      sleep 1
     fi
     echo ""
   done
@@ -861,22 +866,26 @@ function main() {
     # Process OS Versions
     os_count=$(echo "$sofa_json" | jq -r '.OSVersions | length')
     for (( i=0; i<os_count; i++ )); do
-    os_name=$(echo "$sofa_json" | jq -r ".OSVersions[$i].OSVersion")
-    latest_os_name="$os_name"
-    version=$(echo "$sofa_json" | jq -r ".OSVersions[$i].Latest.ProductVersion")
-    release_date=$(echo "$sofa_json" | jq -r ".OSVersions[$i].Latest.ReleaseDate")
-    cves=$(echo "$sofa_json" | jq -r '.OSVersions['"$i"'].Latest.CVEs | select(.!=null) | keys_unsorted | join(",")')
-    active_cves=$(echo "$sofa_json" | jq -r '.OSVersions['"$i"'].Latest.ActivelyExploitedCVEs | select(.!=null) | join(",")')
+      os_name=$(echo "$sofa_json" | jq -r ".OSVersions[$i].OSVersion")
+      latest_os_name="$os_name"
+      version=$(echo "$sofa_json" | jq -r ".OSVersions[$i].Latest.ProductVersion")
+      release_date=$(echo "$sofa_json" | jq -r ".OSVersions[$i].Latest.ReleaseDate")
+      cves=$(echo "$sofa_json" | jq -r '.OSVersions['"$i"'].Latest.CVEs | select(.!=null) | keys_unsorted | join(",")')
+      active_cves=$(echo "$sofa_json" | jq -r '.OSVersions['"$i"'].Latest.ActivelyExploitedCVEs | select(.!=null) | join(",")')
 
-    os_versions[$os_name,version]="$version"
-    os_versions[$os_name,release_date]="$release_date"
-    os_versions[$os_name,cves]="$cves"
-    os_versions[$os_name,active_cves]="$active_cves"
-    os_versions[$os_name,deadline_days]="$(determine_deadline_days "$os_name")"
+      os_versions[$os_name,version]="$version"
+      os_versions[$os_name,release_date]="$release_date"
+      os_versions[$os_name,cves]="$cves"
+      os_versions[$os_name,active_cves]="$active_cves"
+      os_versions[$os_name,deadline_days]="$(determine_deadline_days "$os_name")"
 
-    echo ""
-    log_debug "$os_name ($version) Released: $release_date"
-    log_debug "Calculated deadline days based on severity: ${os_versions[$os_name,deadline_days]}"
+      echo ""
+      log_debug "$os_name ($version) Released: $release_date"
+      log_debug "Calculated deadline days based on severity: ${os_versions[$os_name,deadline_days]}"
+      if [[ "$version" == "$manual_macos_version" ]]; then
+        manual_macos_version_release_date="$release_date"
+        log_debug "Manual macOS version $manual_macos_version found in SOFA feed with release date of: $manual_macos_version_release_date"
+      fi
     done
 
     # If debug mode is enabled, dump the os_versions array
