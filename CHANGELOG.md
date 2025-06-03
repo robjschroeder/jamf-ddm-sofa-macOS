@@ -1,3 +1,21 @@
+
+## [2.0.18] - 2025-06-03
+
+- Merge pull request #10 from dan-snelson/development
+- 2.0.17b5
+- 2.0.17b5
+- Merge branch 'skip_plan_based_on_deferral_days' into development
+- Resources: Extension Attribute for DDM-generated Enforced Install Date (0.0.1)
+- 2.0.17b4: Skip plan creation based on deferral days when '--macOS' and '--deadline' are specified
+- force_ddm_sync: increased verbosity during troubleshooting
+- force_ddm_sync
+- Merge branch 'robjschroeder:main' into development
+- 2.0.17b2
+- 2.0.17b1: Updated 'script_date'
+- Merge pull request #9 from dan-snelson/development
+- 2.0.17b1: Updated 'View plan' instructions
+- chore: update CHANGELOG for v2.0.16
+
 ### Changelog
 
 All notable changes to this project will be documented in this file. Dates are displayed in UTC.
