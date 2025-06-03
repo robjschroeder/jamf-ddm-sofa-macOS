@@ -1,3 +1,10 @@
+
+## [2.0.19] - 2025-06-03
+
+- Merge pull request #13 from dan-snelson/development
+- 2.0.18b1: Added '--configuration' to display the current configuration of the script, including masked Jamf Pro API credentials and the masked NVD API key.
+- chore: update CHANGELOG for v2.0.18
+
 ### Changelog
 
 All notable changes to this project will be documented in this file. Dates are displayed in UTC.
