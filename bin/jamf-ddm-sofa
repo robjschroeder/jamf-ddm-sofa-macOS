@@ -384,10 +384,12 @@ function force_ddm_sync() {
 
     # Use the client_management_id to send a DDM sync via the Jamf Pro API
     # local sync=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$jamf_uri/api/v1/ddm/$client_management_id"/sync \
-    local sync=$(curl -s -X POST "$jamf_uri/api/v1/ddm/$client_management_id"/sync \
+    set -x
+    local sync=$(curl -X POST "$jamf_uri/api/v1/ddm/$client_management_id"/sync \
       -H "Authorization: Bearer $bearer_token" \
       -H "Accept: application/json" \
       -H "Content-Type: application/json")
+    set +x
     log_debug "force_ddm_sync response: $sync"
 
     if [[ "$sync" == "204" ]]; then
@@ -668,7 +670,7 @@ EOF
     log_info "View plan in Jamf Pro API: $jamf_uri/api/v1/managed-software-updates/plans/$plan_id"
     log_info "View plan in Terminal: jq . /tmp/jamf_ddm_plans/$deadline/*.json"
     get_existing_plan "$device_id" "$deadline"
-    # force_ddm_sync
+    force_ddm_sync
   else
     log_warn "Failed to create update plan. Status: $status_code"
     cat /tmp/plan_response.json | jq . || cat /tmp/plan_response.json
@@ -770,7 +772,7 @@ function process_group_devices() {
     else
       if is_dry_run; then
         log_info "[DRY RUN] Skipping actual update plan creation for $device_name ($device_id)"
-        # force_ddm_sync
+        force_ddm_sync
       else
         if [[ -n "${manual_macos_version}" && " ${macos_version_overrides[@]} " =~ " ${group_name} " ]]; then
           manual_available_date=$(date -u -j -f "%Y-%m-%dT%H:%M:%SZ" -v+"$deferral"d "$manual_macos_version_release_date" +"%Y-%m-%dT00:00:00" 2>/dev/null)
@@ -1015,7 +1017,7 @@ function main() {
     done
 
     # Clear Jamf access token
-    clear_jamf_access_token
+    # clear_jamf_access_token
 
 }
 
