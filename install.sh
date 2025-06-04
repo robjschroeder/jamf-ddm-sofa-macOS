@@ -31,13 +31,13 @@ function install_man_page() {
         exit 1
     }
     echo "🔄 Updating man database (may require sudo)..."
-    mandb >/dev/null 2>&1 || echo "ℹ️  mandb not found or failed, man page may not be indexed."
+    /usr/libexec/makewhatis -o /tmp/whatis.db /usr/share/man >/dev/null 2>&1 || echo "ℹ️  makewhatis not found or failed, man page may not be indexed."
 }
 
 function confirm_success() {
     echo "✅ $BIN_NAME installed!"
-    echo "   Run: $BIN_NAME --help"
-    echo "   View manual: man $BIN_NAME"
+    echo "🏃🏼‍➡️ Run: $BIN_NAME --help"
+    echo "📖 View manual: man $BIN_NAME"
 }
 
 # === MAIN ===
