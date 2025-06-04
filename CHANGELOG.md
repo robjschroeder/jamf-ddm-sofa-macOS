@@ -1,3 +1,16 @@
+
+## [2.0.20] - 2025-06-04
+
+- Merge pull request #14 from dan-snelson/development
+- 0.0.2 (again)
+- 0.0.2
+- 2.0.20b1
+- Troubleshooting 'Force DDM sync': Looks like _no_ response *is* success
+- Troubleshooting 'Force DDM sync'
+- Updated man page to include '--configuration'
+- Updated 'install_man_page' to use 'makewhatis'
+- chore: update CHANGELOG for v2.0.19
+
 ### Changelog
 
 All notable changes to this project will be documented in this file. Dates are displayed in UTC.
