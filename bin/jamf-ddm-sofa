@@ -392,7 +392,7 @@ function force_ddm_sync() {
     set +x
     log_debug "force_ddm_sync response: $sync"
 
-    if [[ "$sync" == "204" ]]; then
+    if [[ "$sync" == "204" ]] || [[ -z "$sync" ]]; then
         log_info "Jamf Pro Computer ID $device_id was DDM synced successfully."
     else
         log_warn "Failed to DDM sync Jamf Pro Computer ID $device_id. HTTP Status: $sync"
