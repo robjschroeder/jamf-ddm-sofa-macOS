@@ -10,6 +10,19 @@
 - Supports `--dry-run`, `--debug`, and manual overrides
 - Designed to run interactively or in automation
 
+## ⚙️ Setup
+
+Create a Jamf Pro [API Role and Client](https://learn.jamf.com/en-US/bundle/jamf-pro-documentation-11.17.0/page/API_Roles_and_Clients.html) with the following privileges:
+1. Create Managed Software Updates
+1. Delete Managed Software Updates
+1. Read Computers
+1. Read Managed Software Updates
+1. Read Smart Computer Groups
+1. Send Computer Remote Command to Download and Install OS X Update
+1. Send Declarative Management Command
+1. Update Managed Software Updates
+1. View MDM command information in Jamf Pro API
+
 ## 🖌️ Customization
 
 ```bash
@@ -23,7 +36,11 @@ Using your preferred code editor, complete the following steps:
 
 1. Update `Smart Group Deferral Days` with the number of days updates are deferred for each group (i.e., when the update becomes available to the group)
 
-1. Review `Deadline Policy` and adjust as required
+1. Review the following and adjust as required:
+    - `Smart Group macOS Version Overrides`
+    - `Smart Group Deadline Overrides`
+    - `Deadline Policy`
+
 
 ## 🛠 Installation
 
@@ -66,6 +83,7 @@ jamf-ddm-sofa --jamf-client-id <id> --jamf-client-secret <secret> --jamf-uri <ur
 - `--deadline 2025-06-01`   Override the calculated deadline
 - `--dry-run`               Do not create any update plans
 - `--debug`                 Enable verbose debug output
+- `--configuration`         Display current configuration
 - `--help`                  Show usage info
 - `--version`               Show script version
 

@@ -14,7 +14,7 @@ sofa_uri="https://sofafeed.macadmins.io/v1/macos_data_feed.json"
 
 # === Script Defaults ===
 script_name="Jamf DDM SOFA Processor"
-script_version="2.0.19"
+script_version="2.0.20b1"
 script_date="2025-06-03"
 log_level="INFO"
 dry_run="false"
@@ -370,7 +370,6 @@ function clear_jamf_access_token() {
 
 # === Force DDM sync ===
 # This function forces a DDM sync of the plan to the device.
-# Requires the "Send Declarative Management Command" privilege.
 # See: https://developer.jamf.com/jamf-pro/reference/post_v1-ddm-clientmanagementid-sync
 function force_ddm_sync() {
     log_info "Force DDM sync of the plan to the device."
@@ -383,13 +382,10 @@ function force_ddm_sync() {
     log_debug "force_ddm_sync client_management_id: $client_management_id"
 
     # Use the client_management_id to send a DDM sync via the Jamf Pro API
-    # local sync=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$jamf_uri/api/v1/ddm/$client_management_id"/sync \
-    set -x
-    local sync=$(curl -X POST "$jamf_uri/api/v1/ddm/$client_management_id"/sync \
+    local sync=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$jamf_uri/api/v1/ddm/$client_management_id"/sync \
       -H "Authorization: Bearer $bearer_token" \
       -H "Accept: application/json" \
       -H "Content-Type: application/json")
-    set +x
     log_debug "force_ddm_sync response: $sync"
 
     if [[ "$sync" == "204" ]] || [[ -z "$sync" ]]; then
@@ -772,7 +768,6 @@ function process_group_devices() {
     else
       if is_dry_run; then
         log_info "[DRY RUN] Skipping actual update plan creation for $device_name ($device_id)"
-        force_ddm_sync
       else
         if [[ -n "${manual_macos_version}" && " ${macos_version_overrides[@]} " =~ " ${group_name} " ]]; then
           manual_available_date=$(date -u -j -f "%Y-%m-%dT%H:%M:%SZ" -v+"$deferral"d "$manual_macos_version_release_date" +"%Y-%m-%dT00:00:00" 2>/dev/null)
