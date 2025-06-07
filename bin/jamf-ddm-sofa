@@ -14,8 +14,8 @@ sofa_uri="https://sofafeed.macadmins.io/v1/macos_data_feed.json"
 
 # === Script Defaults ===
 script_name="Jamf DDM SOFA Processor"
-script_version="2.0.20"
-script_date="2025-06-03"
+script_version="2.0.21b1"
+script_date="2025-06-07"
 log_level="INFO"
 dry_run="false"
 version_type="LATEST_MINOR"
@@ -166,6 +166,10 @@ Declarative Software Update plans in Jamf Pro based on smart groups and policy l
 
     --configuration
         Displays the current configuration of the script, including masked Jamf Pro API credentials and the masked NVD API key.
+
+    --computer
+        Creates a Managed Software Update plan in Jamf Pro for the specified Jamf Pro Computer ID (or Serial Number).
+        Must be used with --macOS and --deadline parameters.
 
     --dry-run
         Runs the script in dry run mode, which means it will not create any update plans.
@@ -790,6 +794,130 @@ function process_group_devices() {
 
 }
 
+# === Specific Computer ===
+# This function creates a Managed Software Update plan in Jamf Pro for a specific computer,
+# using the supplied Jamf Pro Computer ID (or Serial Number), macOS version and deadline.
+function specific_computer() {
+
+  local computer="$1"
+
+  # Validate supplied '--deadline' date format
+  if [[ "$manual_deadline" =~ ^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$ ]]; then
+    parsed_date=$(date -j -f "%Y-%m-%d" "$manual_deadline" "+%Y-%m-%d" 2>/dev/null)
+  if [[ "$parsed_date" != "$manual_deadline" ]]; then
+    script_header
+    echo "Error: '--deadline' value '$manual_deadline' is not a valid calendar date."
+    echo "Please check your input and try again."
+    exit 1
+  fi
+  else
+    script_header
+    echo "Error: '--deadline' must be in format YYYY-MM-DD (MM=01-12, DD=01-31) but was specified as '$manual_deadline'."
+    echo "Please check your input and try again."
+    exit 1
+  fi
+
+  # Validate supplied '--macOS' version format
+  if [[ -z "$manual_macos_version" ]]; then
+      script_header
+      echo "Error: '--macOS' requires a version (e.g., 15.5)"
+      exit 1
+  fi
+  if ! [[ "$manual_macos_version" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]]; then
+      script_header
+      echo "Error: '--macOS' must be a valid macOS version (e.g., 15.5)"
+      exit 1
+  fi
+
+  # Fallback to Keychain only if CLI args not provided
+  [[ -z "$jamf_client_id" ]] && jamf_client_id=$(security find-generic-password -s "jamf-ddm-sofa_client_id" -a "$USER" -w 2>/dev/null)
+  [[ -z "$jamf_client_secret" ]] && jamf_client_secret=$(security find-generic-password -s "jamf-ddm-sofa_client_secret" -a "$USER" -w 2>/dev/null)
+  [[ -z "$jamf_uri" ]] && jamf_uri=$(security find-generic-password -s "jamf-ddm-sofa_uri" -a "$USER" -w 2>/dev/null)
+
+  local missing=()
+  [[ -z "$jamf_client_id" ]] && missing+=(--jamf-client-id)
+  [[ -z "$jamf_client_secret" ]] && missing+=(--jamf-client-secret)
+  [[ -z "$jamf_uri" ]] && missing+=(--jamf-uri)
+  [[ -z "$manual_macos_version" ]] && missing+=(--macOS)
+  [[ -z "$manual_deadline" ]] && missing+=(--deadline)
+
+  if [[ ${#missing[@]} -gt 0 ]]; then
+      script_header
+      log_error "Missing required parameters: ${missing[*]}"
+      echo ""
+      echo "Manual Usage: jamf-ddm-sofa --computer [ Jamf Pro Computer ID | Serial Number ] --macOS <version> --deadline <YYYY-MM-DD> --jamf-client-id <id> --jamf-client-secret <secret> --jamf-uri <uri> [other options]"
+      echo ""
+      echo "Or, run: 'jamf-ddm-sofa --configure' to set these parameters in your Keychain."
+      exit 1
+  fi
+
+  script_header
+  echo "    The '--computer' argument will cause this script to create a single update plan
+    in Jamf Pro for the computer specified as: $computer.
+"
+  if [[ "${log_level}" == "DEBUG" ]]; then
+    echo "    Debug mode enabled. Additional debug information will be logged."
+    masked_jamf_client_id="${jamf_client_id:0:3}$(printf '%*s' $((${#jamf_client_id}-4)) '' | tr ' ' '*')${jamf_client_id: -3}"
+    masked_jamf_client_secret="${jamf_client_secret:0:3}$(printf '%*s' $((${#jamf_client_secret}-4)) '' | tr ' ' '*')${jamf_client_secret: -3}"
+    masked_nvd_api_key="${nvd_api_key:0:3}$(printf '%*s' $((${#nvd_api_key}-4)) '' | tr ' ' '*')${nvd_api_key: -3}"
+    echo ""
+    echo "                  jamf_uri: $jamf_uri"
+    echo "            jamf_client_id: $masked_jamf_client_id"
+    echo "        jamf_client_secret: $masked_jamf_client_secret"
+    echo "               nvd_api_key: $masked_nvd_api_key"
+    echo ""
+    echo "                     macOS: $manual_macos_version"
+    echo "                  Deadline: $manual_deadline"
+  fi
+
+  if [[ "${dry_run}" == "true" ]]; then
+    printf "\n    Performing dry run. No update plans will be created.\n\n"
+  fi
+
+  log_info "Initializing plan to update $computer to macOS $manual_macos_version by $manual_deadline …"
+
+  # Get Jamf access token
+  get_jamf_access_token
+
+  # Confirm Managed Software Updates are enabled
+  confirm_managed_software_updates
+
+  # Determine if user provided a Jamf Pro Computer ID (i.e., a number) or a Serial Number (i.e., NOT a number)
+  numberValidation='^[0-9]+$'
+  if ! [[ "${computer}" =~ "${numberValidation}" ]] ; then
+      # Determine the computer's Jamf Pro Computer ID via the computer's Serial Number, "${computer}"
+      local computer_general=$(curl -s "$jamf_uri/api/v1/computers-inventory?section=GENERAL&filter=hardware.serialNumber==$computer" \
+        -H "Authorization: Bearer $bearer_token" \
+        -H "Content-Type: application/json" )
+      local jss_ID=$(echo "$computer_general" | tr -d '\000-\037' | jq -r '.results[0].id // empty')
+      local computer_name=$(echo "$computer_general" | tr -d '\000-\037' | jq -r '.results[0].general.name // empty')
+      log_debug "specific_computer computer_general, via Serial Number: $computer_name ($jss_ID)"
+  else
+      # Use the supplied Jamf Pro Computer ID, "${computer}"
+      local computer_general=$(curl -s "$jamf_uri/api/v1/computers-inventory?section=GENERAL&filter=id==$computer" \
+        -H "Authorization: Bearer $bearer_token" \
+        -H "Content-Type: application/json" )
+      local jss_ID="${computer}"
+      local computer_name=$(echo "$computer_general" | tr -d '\000-\037' | jq -r '.results[0].general.name // empty')
+      log_debug "specific_computer computer_general, via Jamf Pro Computer ID: $computer_name ($jss_ID)"
+  fi
+
+  if is_dry_run; then
+    log_info "[DRY RUN] Skipping actual update plan creation for ${computer_name} (${jss_ID}) …"
+  else
+    log_info "Creating Plan for ${computer_name} (${jss_ID}) …"
+  fi
+
+  # Lots o' to-dos here
+
+
+  # Clear Jamf access token
+  clear_jamf_access_token
+
+  exit 0
+
+}
+
 # === Main Execution ===
 # This section sets up the terminal window size and clears the screen.
 # It also processes command-line arguments and initializes the script.
@@ -886,6 +1014,28 @@ function main() {
             --nvd-api-key )
                 shift; nvd_api_key="$1"
                 ;;
+            --computer )
+              shift
+              # Parse for --debug, --macOS, and --deadline in the global arguments to set variables
+              for (( idx=1; idx<=$#; idx++ )); do
+                case "${@[idx]}" in
+                --debug)
+                  log_level="DEBUG"
+                  ;;
+                --macOS)
+                  if (( idx+1 <= $# )); then
+                    manual_macos_version="${@[idx+1]}"
+                  fi
+                  ;;
+                --deadline)
+                  if (( idx+1 <= $# )); then
+                    manual_deadline="${@[idx+1]}"
+                  fi
+                  ;;
+                esac
+              done
+              specific_computer "$1"
+              ;;
             *)
                 echo "Unknown argument: $1"
                 display_help
@@ -1012,7 +1162,7 @@ function main() {
     done
 
     # Clear Jamf access token
-    # clear_jamf_access_token
+    clear_jamf_access_token
 
 }
 
