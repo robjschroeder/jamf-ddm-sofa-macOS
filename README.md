@@ -84,6 +84,7 @@ jamf-ddm-sofa --jamf-client-id <id> --jamf-client-secret <secret> --jamf-uri <ur
 - `--dry-run`               Do not create any update plans
 - `--debug`                 Enable verbose debug output
 - `--configuration`         Display current configuration
+- `--computer`              Creates a Managed Software Update plan for the specified Jamf Pro Computer ID (or Serial Number)
 - `--help`                  Show usage info
 - `--version`               Show script version
 
