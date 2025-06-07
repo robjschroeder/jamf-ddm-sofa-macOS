@@ -344,7 +344,7 @@ function normalize_version() {
 # === Jamf Access Token ===
 # This function retrieves a bearer token from Jamf Pro for API access.
 function get_jamf_access_token() {
-  log_info "Requesting bearer token from Jamf Pro..."
+  log_info "Requesting bearer token from Jamf Pro …"
   local response=$(curl -s -X POST "$jamf_uri/api/oauth/token" \
     -H "Content-Type: application/x-www-form-urlencoded" \
     -d "client_id=$jamf_client_id&client_secret=$jamf_client_secret&grant_type=client_credentials")
@@ -852,11 +852,15 @@ function specific_computer() {
   fi
 
   script_header
-  echo "    The '--computer' argument will cause this script to create a single update plan
-    in Jamf Pro for the computer specified as: $computer.
+  echo "    The '--computer' argument will cause this script to create a single update plan in Jamf Pro
 "
+
+  if [[ "${dry_run}" == "true" ]]; then
+    printf "    Performing dry run. No update plans will be created.\n\n"
+  fi
+
   if [[ "${log_level}" == "DEBUG" ]]; then
-    echo "    Debug mode enabled. Additional debug information will be logged."
+    echo "    Debug mode enabled. Additional debug information will be displayed."
     masked_jamf_client_id="${jamf_client_id:0:3}$(printf '%*s' $((${#jamf_client_id}-4)) '' | tr ' ' '*')${jamf_client_id: -3}"
     masked_jamf_client_secret="${jamf_client_secret:0:3}$(printf '%*s' $((${#jamf_client_secret}-4)) '' | tr ' ' '*')${jamf_client_secret: -3}"
     masked_nvd_api_key="${nvd_api_key:0:3}$(printf '%*s' $((${#nvd_api_key}-4)) '' | tr ' ' '*')${nvd_api_key: -3}"
@@ -866,12 +870,10 @@ function specific_computer() {
     echo "        jamf_client_secret: $masked_jamf_client_secret"
     echo "               nvd_api_key: $masked_nvd_api_key"
     echo ""
+    echo "                  Computer: $computer"
     echo "                     macOS: $manual_macos_version"
     echo "                  Deadline: $manual_deadline"
-  fi
-
-  if [[ "${dry_run}" == "true" ]]; then
-    printf "\n    Performing dry run. No update plans will be created.\n\n"
+    echo ""
   fi
 
   log_info "Initializing plan to update $computer to macOS $manual_macos_version by $manual_deadline …"
@@ -882,34 +884,105 @@ function specific_computer() {
   # Confirm Managed Software Updates are enabled
   confirm_managed_software_updates
 
-  # Determine if user provided a Jamf Pro Computer ID (i.e., a number) or a Serial Number (i.e., NOT a number)
+  # Determine if user provided a Jamf Pro Computer ID (i.e., a number) or a Serial Number (i.e., NOT exclusively a number)
   numberValidation='^[0-9]+$'
   if ! [[ "${computer}" =~ "${numberValidation}" ]] ; then
-      # Determine the computer's Jamf Pro Computer ID via the computer's Serial Number, "${computer}"
-      local computer_general=$(curl -s "$jamf_uri/api/v1/computers-inventory?section=GENERAL&filter=hardware.serialNumber==$computer" \
+      # Determine the computer's Jamf Pro Computer ID via the computer's Serial Number
+      local computer_general=$(curl -s "$jamf_uri/api/v1/computers-inventory?section=GENERAL&section=OPERATING_SYSTEM&filter=hardware.serialNumber==$computer" \
         -H "Authorization: Bearer $bearer_token" \
         -H "Content-Type: application/json" )
-      local jss_ID=$(echo "$computer_general" | tr -d '\000-\037' | jq -r '.results[0].id // empty')
-      local computer_name=$(echo "$computer_general" | tr -d '\000-\037' | jq -r '.results[0].general.name // empty')
-      log_debug "specific_computer computer_general, via Serial Number: $computer_name ($jss_ID)"
+      local device_id=$(echo "$computer_general" | tr -d '\000-\037' | jq -r '.results[0].id // empty')
   else
-      # Use the supplied Jamf Pro Computer ID, "${computer}"
-      local computer_general=$(curl -s "$jamf_uri/api/v1/computers-inventory?section=GENERAL&filter=id==$computer" \
+      # Use the supplied Jamf Pro Computer ID
+      local computer_general=$(curl -s "$jamf_uri/api/v1/computers-inventory?section=GENERAL&section=OPERATING_SYSTEM&filter=id==$computer" \
         -H "Authorization: Bearer $bearer_token" \
         -H "Content-Type: application/json" )
-      local jss_ID="${computer}"
-      local computer_name=$(echo "$computer_general" | tr -d '\000-\037' | jq -r '.results[0].general.name // empty')
-      log_debug "specific_computer computer_general, via Jamf Pro Computer ID: $computer_name ($jss_ID)"
+      local device_id="${computer}"
   fi
+
+  local computer_name=$(echo "$computer_general" | tr -d '\000-\037' | jq -r '.results[0].general.name // empty')
+  local computer_current_operating_system_version=$(echo "$computer_general" | jq -r '.results[0].operatingSystem.version // empty')
+  local computer_current_operating_system_build=$(echo "$computer_general" | jq -r '.results[0].operatingSystem.build // empty')
+  log_info "$computer_name (ID ${device_id}) is currently running macOS $computer_current_operating_system_version ($computer_current_operating_system_build)"
 
   if is_dry_run; then
-    log_info "[DRY RUN] Skipping actual update plan creation for ${computer_name} (${jss_ID}) …"
+    log_info "[DRY RUN] Skipping actual update plan creation for $computer_name (ID ${device_id}) …"
   else
-    log_info "Creating Plan for ${computer_name} (${jss_ID}) …"
+    log_info "Creating Plan for $computer_name (ID ${device_id}) …"
   fi
 
-  # Lots o' to-dos here
+  # If manual_deadline is in the past, adjust to tomorrow at 18:00:00
+  # Convert both dates to epoch seconds for accurate comparison
+  current_utc=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+  manual_deadline_epoch=$(date -j -f "%Y-%m-%dT%H:%M:%S" "${manual_deadline}" "+%s" 2>/dev/null)
+  current_utc_epoch=$(date -j -f "%Y-%m-%dT%H:%M:%SZ" "${current_utc}" "+%s" 2>/dev/null)
+  if [[ "$manual_deadline_epoch" -lt "$current_utc_epoch" ]]; then
+    log_warn "Original deadline, $manual_deadline, is in the past."
+    manual_deadline="$(date -u -v+1d +"%Y-%m-%d")T18:00:00"
+    log_warn "Adjusted deadline to tomorrow: $manual_deadline"
+  # elif [[ -n "$manual_deadline_epoch" && -n "$current_utc_epoch" && "$manual_deadline_epoch" -lt "$current_utc_epoch" ]]; then
+  #   log_warn "Force date, $manual_deadline, is in the past; users will have ONE HOUR to install the update."
+  else
+    manual_deadline="${manual_deadline}T18:00:00"
+    log_info "Using deadline: $manual_deadline"
+  fi  
 
+  log_info "Checking for existing plan for $computer_name (ID ${device_id}) to upgrade to macOS $manual_macos_version with a deadline of $manual_deadline …"
+  local existing_count=$(get_existing_plan "$device_id" "$manual_deadline")
+  log_debug "specific_computer existing_count: $existing_count"
+
+  if [[ "$existing_count" -gt 0 ]]; then
+    log_warn "Existing plan(s) found for $computer_name (ID ${device_id}) with same deadline. Skipping."
+    log_info "View plan in Terminal: jq . /tmp/jamf_ddm_plans/$manual_deadline/$device_id.json"
+  else
+    if is_dry_run; then
+      log_info "[DRY RUN] Skipping actual update plan creation for $computer_name (ID ${device_id}) …"
+    else
+      log_info "Initiating update plan for $computer_name (${device_id}) from macOS $computer_current_operating_system_version ($computer_current_operating_system_build) to $manual_macos_version with deadline $manual_deadline …"
+      local json_body=$(cat <<EOF
+{
+  "devices": [
+    {
+      "objectType": "COMPUTER",
+      "deviceId": "$device_id"
+    }
+  ],
+  "config": {
+    "updateAction": "DOWNLOAD_INSTALL_SCHEDULE",
+    "versionType": "SPECIFIC_VERSION",
+    "specificVersion": "$manual_macos_version",
+    "forceInstallLocalDateTime": "$manual_deadline"
+  }
+}
+EOF
+  )
+
+      log_info "Creating update plan for $computer_name (ID ${device_id}) to $manual_macos_version by $manual_deadline"
+
+      local response=$(curl -s -w "%{http_code}" -o /tmp/plan_response.json \
+        -X POST "$jamf_uri/api/v1/managed-software-updates/plans" \
+        -H "Authorization: Bearer $bearer_token" \
+        -H "Accept: application/json" \
+        -H "Content-Type: application/json" \
+        -d "$json_body")
+
+      local status_code="${response:(-3)}"
+
+      if [[ "$status_code" == "201" ]]; then
+        local plan_id=$(jq -r '.plans[0].planId' /tmp/plan_response.json)
+        log_info "Update plan created. Plan ID: $plan_id"
+        log_info "View plan in Jamf Pro API: $jamf_uri/api/v1/managed-software-updates/plans/$plan_id"
+        log_info "View plan in Terminal: jq . /tmp/jamf_ddm_plans/$manual_deadline/*.json"
+        get_existing_plan "$device_id" "$manual_deadline"
+        force_ddm_sync
+      else
+        log_warn "Failed to create update plan. Status: $status_code"
+        cat /tmp/plan_response.json | jq . || cat /tmp/plan_response.json
+      fi
+    fi
+  fi
+
+  echo ""
 
   # Clear Jamf access token
   clear_jamf_access_token
@@ -1016,22 +1089,12 @@ function main() {
                 ;;
             --computer )
               shift
-              # Parse for --debug, --macOS, and --deadline in the global arguments to set variables
               for (( idx=1; idx<=$#; idx++ )); do
                 case "${@[idx]}" in
-                --debug)
-                  log_level="DEBUG"
-                  ;;
-                --macOS)
-                  if (( idx+1 <= $# )); then
-                    manual_macos_version="${@[idx+1]}"
-                  fi
-                  ;;
-                --deadline)
-                  if (( idx+1 <= $# )); then
-                    manual_deadline="${@[idx+1]}"
-                  fi
-                  ;;
+                  --dry-run  ) dry_run="true" ;;
+                  --debug    ) log_level="DEBUG" ;;
+                  --macOS    ) (( idx+1 <= $# )) && manual_macos_version="${@[idx+1]}" ;;
+                  --deadline ) (( idx+1 <= $# )) && manual_deadline="${@[idx+1]}" ;;
                 esac
               done
               specific_computer "$1"
@@ -1073,7 +1136,7 @@ function main() {
 "
 
     if [[ "${log_level}" == "DEBUG" ]]; then
-      echo "    Debug mode enabled. Additional debug information will be logged."
+      echo "    Debug mode enabled. Additional debug information will be displayed."
       masked_jamf_client_id="${jamf_client_id:0:3}$(printf '%*s' $((${#jamf_client_id}-4)) '' | tr ' ' '*')${jamf_client_id: -3}"
       masked_jamf_client_secret="${jamf_client_secret:0:3}$(printf '%*s' $((${#jamf_client_secret}-4)) '' | tr ' ' '*')${jamf_client_secret: -3}"
       masked_nvd_api_key="${nvd_api_key:0:3}$(printf '%*s' $((${#nvd_api_key}-4)) '' | tr ' ' '*')${nvd_api_key: -3}"
