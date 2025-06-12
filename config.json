@@ -1,0 +1,12 @@
+{
+  "groups": {
+    "Group Name A": {
+      "deferral_days": 7,
+      "version_type": "LATEST_MINOR"
+    },
+    "Group Name B": {
+      "deferral_days": 3
+    }
+  },
+  "deadline_days": 14
+}

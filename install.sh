@@ -4,6 +4,7 @@
 BIN_NAME="jamf-ddm-sofa"
 INSTALL_PATH="/usr/local/bin"
 MAN_PATH="/usr/local/share/man/man1"
+CONFIG_PATH="/usr/local/jamf-ddm-sofa-config.json"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # === FUNCTIONS ===

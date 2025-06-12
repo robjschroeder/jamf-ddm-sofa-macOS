@@ -1,3 +1,11 @@
+
+## [2.0.21] - 2025-06-12
+
+- Merge pull request #15 from dan-snelson/specific_computer
+- 2.0.21b1 adds '--computer' option
+- Initial framework for '--computer'
+- chore: update CHANGELOG for v2.0.20
+
 ### Changelog
 
 All notable changes to this project will be documented in this file. Dates are displayed in UTC.
