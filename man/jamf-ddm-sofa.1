@@ -23,6 +23,11 @@ Prompts for Jamf Pro API credentials and NVD API key, which are stored in your '
 Displays the current configuration of the script, including masked Jamf Pro API credentials and the masked NVD API key.
 
 .TP
+.B --computer
+Creates a Managed Software Update plan in Jamf Pro for the specified Jamf Pro Computer ID (or Serial Number).
+Must be used with --macOS and --deadline parameters.
+
+.TP
 .B --jamf-client-id
 .I <id>
 Jamf Pro API Client ID.
